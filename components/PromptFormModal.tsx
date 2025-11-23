@@ -161,7 +161,11 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
     <div className="fixed inset-0 z-[60] flex items-center justify-center sm:p-6">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose}></div>
       
-      <div className="relative w-full max-w-6xl bg-slate-900 sm:rounded-2xl shadow-2xl border border-slate-800 flex flex-col h-full sm:h-auto sm:max-h-[95vh] overflow-hidden">
+      {/* 
+         FIX: Changed height to fixed sm:h-[90vh] to allow internal scrolling.
+         Added overflow-hidden to prevent parent scrollbars.
+      */}
+      <div className="relative w-full max-w-6xl bg-slate-900 sm:rounded-2xl shadow-2xl border border-slate-800 flex flex-col h-full sm:h-[90vh] overflow-hidden">
         
         <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/50 gap-4 sm:gap-0 shrink-0">
           <h2 className="text-xl font-bold text-white order-1">
@@ -190,13 +194,14 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
         </div>
 
         {/* 
-            FIX: 
-            - Mobile: overflow-y-auto on FORM, children h-auto.
-            - Desktop: overflow-hidden on FORM, children overflow-y-auto h-full.
+            FIX:
+            Mobile/Tablet (<lg): Flex-col. The wrapper scrolls (overflow-y-auto).
+            Desktop (>=lg): Flex-row. The wrapper does NOT scroll (overflow-hidden), internal columns scroll.
         */}
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden relative">
             
             {/* Left Column: Result & Inputs */}
+            {/* On Desktop, this has its own scrollbar. On mobile, it just stacks. */}
             <div className="w-full lg:w-1/2 p-4 sm:p-6 h-auto lg:h-full lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-800 space-y-6 scrollbar-thin scrollbar-thumb-slate-800 pb-6 lg:pb-20">
                 
                 {/* Meta Fields */}
@@ -316,7 +321,8 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
             </div>
 
             {/* Right Column: Components Builder */}
-            <div className="w-full lg:w-1/2 p-4 sm:p-6 h-auto lg:h-full lg:overflow-y-auto bg-slate-900 border-t lg:border-t-0 border-slate-800 pb-20">
+            {/* Same logic: Desktop has independent scroll, mobile stacks. */}
+            <div className="w-full lg:w-1/2 p-4 sm:p-6 h-auto lg:h-full lg:overflow-y-auto bg-slate-900 border-t lg:border-t-0 border-slate-800 pb-20 scrollbar-thin scrollbar-thumb-slate-800">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
                     <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider">Конструктор</h3>
                     <select 

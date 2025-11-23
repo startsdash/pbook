@@ -142,6 +142,7 @@ export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], ta
     ];
 
     // Sheet 2: Structures
+    // Always create sheet if structures exist, ensures new structures are saved
     if (structureRows.length > 0) {
         const structureWorksheet = XLSX.utils.json_to_sheet(structureRows);
         XLSX.utils.book_append_sheet(workbook, structureWorksheet, "Structures");
@@ -260,18 +261,29 @@ export const parseExcelDatabase = async (file: File): Promise<{ prompts: Prompt[
                     parsedTags = settingsJson.filter(r => r.Type === 'Tag').map(r => String(r.Value));
                 }
 
-                // 4. Merge with metadata found in prompts (recovery mode)
-                // We use Sets to avoid duplicates, but strictly respect the "Settings" sheet if it exists to avoid tag/category confusion.
-                const promptCategories = new Set(prompts.map(p => p.category));
-                const promptTags = new Set(prompts.flatMap(p => p.tags));
+                // 4. Finalize Categories & Tags
+                // CRITICAL FIX: To prevent Tags from accidentally polluting the Category dropdown,
+                // we ONLY scrape categories from prompt rows if the explicit 'Settings' sheet was missing or empty.
+                // If 'Settings' exists, it is the source of truth.
+                
+                let finalCategories: string[] = [];
+                if (parsedCategories.length > 0) {
+                    finalCategories = parsedCategories;
+                } else {
+                    // Fallback: Scrape from prompts only if no explicit settings found
+                    const promptCategories = new Set(prompts.map(p => p.category));
+                    finalCategories = Array.from(promptCategories);
+                }
 
-                // Combine parsed settings with any categories/tags actually used in the prompts
-                const finalCategories = Array.from(new Set([...parsedCategories, ...promptCategories])).filter(c => c && c !== 'Все');
+                const promptTags = new Set(prompts.flatMap(p => p.tags));
                 const finalTags = Array.from(new Set([...parsedTags, ...promptTags])).filter(Boolean);
+
+                // Always ensure 'Все' is present and duplicates removed
+                const uniqueCategories = Array.from(new Set(['Все', ...finalCategories]));
 
                 resolve({ 
                     prompts, 
-                    categories: ['Все', ...finalCategories], 
+                    categories: uniqueCategories, 
                     tags: finalTags,
                     structures 
                 });
