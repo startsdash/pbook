@@ -3,11 +3,19 @@ import { GoogleGenAI } from "@google/genai";
 import { PromptComponent } from "../types";
 
 const getClient = () => {
-  // Safely access process.env to avoid ReferenceError in strict browser environments
-  const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
-  
+  let apiKey: string | undefined;
+
+  try {
+    // Attempt to access process.env.API_KEY directly.
+    // In build environments (Vite/Webpack), this string is often replaced by the actual key literal.
+    // We wrap in try-catch to prevent ReferenceError if 'process' is not defined at runtime.
+    apiKey = process.env.API_KEY;
+  } catch (e) {
+    console.warn("process.env.API_KEY could not be accessed directly.", e);
+  }
+
   if (!apiKey) {
-    console.error("API_KEY is missing. Ensure process.env.API_KEY is set.");
+    console.error("API_KEY is missing. Ensure process.env.API_KEY is available in your environment.");
     return null;
   }
   return new GoogleGenAI({ apiKey });
@@ -19,7 +27,7 @@ export const generatePromptResponse = async (
 ): Promise<string> => {
   const client = getClient();
   if (!client) {
-    return "Ошибка: API ключ не настроен.";
+    return "Ошибка: API ключ не найден или не настроен.";
   }
 
   try {
@@ -63,7 +71,7 @@ export const assemblePromptWithAI = async (components: PromptComponent[], target
     Rules:
     1. Use Markdown headers (e.g. ### LabelName) for each component to maintain structure and clarity.
     2. Do not change the meaning of the content, but you may fix grammar or improve flow slightly if necessary.
-    3. Preserve the language of the input content (Russian).
+    3. Preserve the language of the input content (mostly Russian).
     4. Return ONLY the formatted prompt text. Do not add any conversational filler or explanations.
     
     Input Components:
