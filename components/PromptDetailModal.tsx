@@ -37,7 +37,11 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
     <div className="fixed inset-0 z-50 flex items-center justify-center sm:p-6">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose}></div>
       
-      <div className="relative w-full max-w-5xl bg-slate-900 sm:rounded-2xl shadow-2xl border border-slate-800 flex flex-col h-full sm:h-auto sm:max-h-[90vh] overflow-hidden">
+      {/* 
+          Fixed height on desktop (h-[90vh]) ensures the internal overflow works correctly.
+          Flex layout handles the header vs content area.
+      */}
+      <div className="relative w-full max-w-6xl bg-slate-900 sm:rounded-2xl shadow-2xl border border-slate-800 flex flex-col h-full sm:h-[90vh] overflow-hidden">
         
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/50 gap-4 sm:gap-0 shrink-0">
@@ -139,10 +143,14 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
             </div>
         </div>
 
-        <div className="flex flex-col lg:flex-row h-full overflow-hidden bg-slate-950">
+        {/* 
+            Content Area 
+            min-h-0 is crucial for nested flex scrolling 
+        */}
+        <div className="flex flex-col lg:flex-row flex-1 min-h-0 bg-slate-950">
             
             {/* Main Content: System & User Prompts */}
-            <div className="w-full lg:w-2/3 p-4 sm:p-6 overflow-y-auto space-y-6 scrollbar-thin scrollbar-thumb-slate-800">
+            <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-6 scrollbar-thin scrollbar-thumb-slate-800">
                 
                 {/* System Prompt */}
                 <div className="space-y-2">
@@ -186,7 +194,8 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
             </div>
 
             {/* Sidebar: Info & Components */}
-            <div className="w-full lg:w-1/3 p-4 sm:p-6 border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-900 overflow-y-auto shrink-0 pb-10">
+            {/* Using explicit width (w-80/w-96) prevents squeezing of main content and overlaps. Added scrollbar styles. */}
+            <div className="w-full lg:w-80 xl:w-96 p-4 sm:p-6 border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-900/50 overflow-y-auto shrink-0 scrollbar-thin scrollbar-thumb-slate-800">
                  <div className="mb-6">
                     <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-2">Описание</h3>
                     <p className="text-sm text-slate-300 leading-relaxed">{prompt.description}</p>
