@@ -1,13 +1,5 @@
 
-export enum Category {
-  ALL = 'Все',
-  ROLES = 'Ролевые модели',
-  TEXT = 'Работа с текстом',
-  IDEAS = 'Генерация идей',
-  TECHNICAL = 'Технические / Код',
-  VISUAL = 'Визуал / Изображения'
-}
-
+export type VerificationStatus = 'VERIFIED' | 'ON_REVIEW';
 export type TargetType = 'SYSTEM' | 'USER';
 
 export interface PromptComponent {
@@ -21,25 +13,25 @@ export interface Structure {
   id: string;
   title: string;
   description?: string;
-  defaultComponents: string[]; // Список названий полей по умолчанию (Context, Objective...)
+  defaultComponents: string[];
 }
 
 export interface Prompt {
   id: string;
   title: string;
-  category: Category;
+  category: string; // Changed from Enum to string for dynamic categories
   tags: string[];
   
-  // Новая структура контента
   systemContent: string;
   userContent: string;
   
   description: string;
-  modelRecommendation: string;
-  exampleOutput?: string;
-  notes?: string;
   
-  // Связь со структурой
+  // New status field
+  verificationStatus: VerificationStatus;
+  
+  // Removed: modelRecommendation, exampleOutput, notes
+  
   structureId?: string;
   components: PromptComponent[];
 }

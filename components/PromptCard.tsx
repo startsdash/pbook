@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { Prompt } from '../types';
-import { Tag, Cpu, Copy } from 'lucide-react';
+import { Tag, Copy, CheckCircle2, Clock } from 'lucide-react';
 
 interface PromptCardProps {
   prompt: Prompt;
@@ -10,8 +11,7 @@ interface PromptCardProps {
 export const PromptCard: React.FC<PromptCardProps> = ({ prompt, onClick }) => {
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(prompt.content);
-    // Could add a toast here, but keeping it simple
+    navigator.clipboard.writeText(`${prompt.systemContent}\n\n${prompt.userContent}`);
   };
 
   return (
@@ -20,7 +20,7 @@ export const PromptCard: React.FC<PromptCardProps> = ({ prompt, onClick }) => {
       className="group relative bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-300 cursor-pointer flex flex-col h-full"
     >
       <div className="flex justify-between items-start mb-3">
-        <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">
+        <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 max-w-[70%] truncate">
           {prompt.category}
         </div>
         <button 
@@ -49,9 +49,18 @@ export const PromptCard: React.FC<PromptCardProps> = ({ prompt, onClick }) => {
           ))}
         </div>
         
-        <div className="pt-3 border-t border-slate-800 flex items-center text-xs text-indigo-400 font-mono">
-          <Cpu size={12} className="mr-1.5" />
-          {prompt.modelRecommendation}
+        <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+           {prompt.verificationStatus === 'VERIFIED' ? (
+               <div className="flex items-center text-emerald-400 text-xs font-medium bg-emerald-950/30 px-2 py-1 rounded border border-emerald-900/50">
+                   <CheckCircle2 size={12} className="mr-1.5" />
+                   Проверено
+               </div>
+           ) : (
+                <div className="flex items-center text-amber-400 text-xs font-medium bg-amber-950/30 px-2 py-1 rounded border border-amber-900/50">
+                    <Clock size={12} className="mr-1.5" />
+                    На проверке
+                </div>
+           )}
         </div>
       </div>
     </div>

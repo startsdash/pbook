@@ -1,34 +1,41 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Category, Prompt, Structure } from './types';
-import { INITIAL_PROMPTS, INITIAL_STRUCTURES } from './constants';
+import { Prompt, Structure } from './types';
+import { INITIAL_PROMPTS, INITIAL_STRUCTURES, INITIAL_CATEGORIES, INITIAL_TAGS } from './constants';
 import { CategoryFilter } from './components/CategoryFilter';
 import { PromptCard } from './components/PromptCard';
 import { PromptDetailModal } from './components/PromptDetailModal';
 import { PromptFormModal } from './components/PromptFormModal';
 import { StructureManagerModal } from './components/StructureManagerModal';
-import { Search, BookOpen, Sparkles, Plus, Layers, Download, Upload, Database } from 'lucide-react';
+import { SettingsModal } from './components/SettingsModal';
+import { Search, BookOpen, Plus, Layers, Download, Upload, Database, Settings } from 'lucide-react';
 import { exportPromptsToExcel, parseExcelDatabase } from './utils/fileExport';
 
 export default function App() {
   const [prompts, setPrompts] = useState<Prompt[]>(INITIAL_PROMPTS);
   const [structures, setStructures] = useState<Structure[]>(INITIAL_STRUCTURES);
-  const [selectedCategory, setSelectedCategory] = useState<Category>(Category.ALL);
+  
+  // Dynamic Categories & Tags
+  const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
+  const [availableTags, setAvailableTags] = useState<string[]>(INITIAL_TAGS);
+
+  const [selectedCategory, setSelectedCategory] = useState<string>('Все');
   const [searchQuery, setSearchQuery] = useState('');
   
   // Modals state
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isStructureManagerOpen, setIsStructureManagerOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
   
   // File Input Ref
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Filter prompts based on category and search query
+  // Filter prompts
   const filteredPrompts = useMemo(() => {
     return prompts.filter(prompt => {
-      const matchesCategory = selectedCategory === Category.ALL || prompt.category === selectedCategory;
+      const matchesCategory = selectedCategory === 'Все' || prompt.category === selectedCategory;
       const matchesSearch = 
         prompt.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         prompt.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -56,6 +63,14 @@ export default function App() {
     } else {
         setPrompts(prev => [promptData, ...prev]);
     }
+    
+    // Auto-add new tags to available tags
+    promptData.tags.forEach(tag => {
+        if (!availableTags.includes(tag)) {
+            setAvailableTags(prev => [...prev, tag]);
+        }
+    });
+
     setIsFormOpen(false);
     setEditingPrompt(null);
   };
@@ -83,29 +98,24 @@ export default function App() {
               if (window.confirm(`Найдено ${importedPrompts.length} промптов. Заменить текущую базу (OK) или добавить к существующей (Cancel)?`)) {
                   setPrompts(importedPrompts);
               } else {
-                  // Merge logic: Add only if ID doesn't exist, otherwise update? 
-                  // Simple merge: append all, generate new IDs if collision?
-                  // Let's just append for safety, filtering duplicates by ID would be better but let's keep it simple.
-                  // Actually, let's filter out IDs that already exist to prevent duplicate keys in React
                   const existingIds = new Set(prompts.map(p => p.id));
                   const newUniquePrompts = importedPrompts.filter(p => !existingIds.has(p.id));
                   setPrompts([...prompts, ...newUniquePrompts]);
                   alert(`Добавлено ${newUniquePrompts.length} новых промптов.`);
               }
+              // Ideally update categories/tags from import too, but skipping for simplicity
           }
       } catch (error) {
           console.error("Import failed", error);
           alert("Ошибка при чтении файла. Убедитесь, что это корректный Excel файл Prompt Book.");
       }
       
-      // Reset input
       if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden">
       
-      {/* Hidden File Input */}
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -116,11 +126,20 @@ export default function App() {
 
       {/* Sidebar */}
       <aside className="w-64 hidden md:flex flex-col border-r border-slate-800 bg-slate-950 flex-shrink-0">
-        <div className="p-6 border-b border-slate-800 flex items-center gap-2">
-          <div className="bg-indigo-600 p-1.5 rounded-lg">
-            <BookOpen size={20} className="text-white" />
-          </div>
-          <h1 className="font-bold text-xl tracking-tight text-white">Prompt Book</h1>
+        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+                <div className="bg-indigo-600 p-1.5 rounded-lg">
+                    <BookOpen size={20} className="text-white" />
+                </div>
+                <h1 className="font-bold text-xl tracking-tight text-white">Prompt Book</h1>
+            </div>
+            <button 
+                onClick={() => setIsSettingsOpen(true)}
+                className="text-slate-500 hover:text-white transition-colors p-1"
+                title="Настройки"
+            >
+                <Settings size={18} />
+            </button>
         </div>
         
         <div className="p-4 pb-0 space-y-2">
@@ -136,22 +155,21 @@ export default function App() {
                 className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
             >
                 <Layers size={18} />
-                Структуры промпта
+                Структуры
             </button>
         </div>
         
         <div className="flex-1 overflow-y-auto p-4">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 px-4">Библиотека</div>
-          <CategoryFilter selectedCategory={selectedCategory} onSelect={setSelectedCategory} />
+          <CategoryFilter categories={categories} selectedCategory={selectedCategory} onSelect={setSelectedCategory} />
         </div>
 
         <div className="p-4 border-t border-slate-800 space-y-2">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Управление базой</div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">База данных</div>
             <div className="grid grid-cols-2 gap-2">
                 <button 
                     onClick={handleExportDatabase}
                     className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-2 rounded-lg transition-all text-xs text-slate-400 hover:text-white"
-                    title="Экспорт в Excel"
                 >
                     <Download size={16} className="text-emerald-500" />
                     Экспорт
@@ -159,7 +177,6 @@ export default function App() {
                 <button 
                     onClick={handleImportClick}
                     className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-2 rounded-lg transition-all text-xs text-slate-400 hover:text-white"
-                    title="Импорт из Excel"
                 >
                     <Upload size={16} className="text-blue-500" />
                     Импорт
@@ -178,8 +195,8 @@ export default function App() {
                  <h1 className="font-bold text-lg">Prompt Book</h1>
             </div>
             <div className="flex gap-2">
-                <button onClick={handleImportClick} className="text-slate-400 p-2">
-                    <Database size={24} />
+                <button onClick={() => setIsSettingsOpen(true)} className="text-slate-400 p-2">
+                    <Settings size={22} />
                 </button>
                 <button onClick={handleCreatePrompt} className="text-indigo-400 p-2">
                     <Plus size={24} />
@@ -193,15 +210,15 @@ export default function App() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
             <input 
               type="text"
-              placeholder="Поиск промптов, тегов или описаний..."
+              placeholder="Поиск промптов..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 text-slate-200 pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm"
+              className="w-full bg-slate-900 border border-slate-800 text-slate-200 pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:border-indigo-500 transition-all text-sm"
             />
           </div>
           <div className="ml-auto flex items-center gap-4">
              <div className="text-xs text-slate-500 hidden sm:block">
-                На базе <span className="text-slate-300 font-medium">Google Gemini</span>
+                Powered by <span className="text-slate-300 font-medium">Gemini</span>
              </div>
           </div>
         </div>
@@ -212,7 +229,7 @@ export default function App() {
              
              <div className="mb-6 flex items-baseline gap-2">
                 <h2 className="text-2xl font-bold text-white">{selectedCategory}</h2>
-                <span className="text-slate-500 text-sm">({filteredPrompts.length} промптов)</span>
+                <span className="text-slate-500 text-sm">({filteredPrompts.length})</span>
              </div>
 
              {filteredPrompts.length > 0 ? (
@@ -228,8 +245,7 @@ export default function App() {
              ) : (
                  <div className="flex flex-col items-center justify-center h-64 text-slate-500">
                     <Search size={48} className="mb-4 opacity-20" />
-                    <p className="text-lg font-medium">Промпты не найдены</p>
-                    <p className="text-sm">Попробуйте изменить поисковый запрос или категорию.</p>
+                    <p className="text-lg font-medium">Ничего не найдено</p>
                  </div>
              )}
           </div>
@@ -250,6 +266,8 @@ export default function App() {
         <PromptFormModal
             initialData={editingPrompt}
             structures={structures}
+            categories={categories}
+            availableTags={availableTags}
             onSave={handleSavePrompt}
             onClose={() => setIsFormOpen(false)}
         />
@@ -260,6 +278,16 @@ export default function App() {
             structures={structures}
             onUpdateStructures={setStructures}
             onClose={() => setIsStructureManagerOpen(false)}
+          />
+      )}
+
+      {isSettingsOpen && (
+          <SettingsModal
+            categories={categories}
+            setCategories={setCategories}
+            tags={availableTags}
+            setTags={setAvailableTags}
+            onClose={() => setIsSettingsOpen(false)}
           />
       )}
     </div>

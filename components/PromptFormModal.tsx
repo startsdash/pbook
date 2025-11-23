@@ -1,30 +1,30 @@
 
 import React, { useState, useEffect } from 'react';
-import { Prompt, Category, Structure, PromptComponent, TargetType } from '../types';
-import { X, Save, Plus, GripVertical, Trash2, Copy, Sparkles, Cpu, User } from 'lucide-react';
+import { Prompt, Structure, PromptComponent, TargetType, VerificationStatus } from '../types';
+import { X, Save, Plus, GripVertical, Trash2, Copy, Sparkles, Cpu, User, CheckCircle2, Clock } from 'lucide-react';
 import { assemblePromptWithAI } from '../services/geminiService';
 
 interface PromptFormModalProps {
   initialData?: Prompt | null;
   structures: Structure[];
+  categories: string[];
+  availableTags: string[];
   onSave: (prompt: Prompt) => void;
   onClose: () => void;
 }
 
 const EMPTY_PROMPT: Partial<Prompt> = {
   title: '',
-  category: Category.TEXT,
+  category: 'Работа с текстом',
   tags: [],
   systemContent: '',
   userContent: '',
   description: '',
-  modelRecommendation: 'Gemini 2.5 Flash',
-  exampleOutput: '',
-  notes: '',
+  verificationStatus: 'ON_REVIEW',
   components: []
 };
 
-export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, structures, onSave, onClose }) => {
+export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, structures, categories, availableTags, onSave, onClose }) => {
   const [formData, setFormData] = useState<Prompt>({ ...EMPTY_PROMPT, id: Date.now().toString() } as Prompt);
   const [tagInput, setTagInput] = useState('');
   
@@ -50,7 +50,7 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
     setSelectedStructureId(structId);
     const struct = structures.find(s => s.id === structId);
     if (struct) {
-        // Create new components based on structure defaults, preserving existing values if labels match
+        // Create new components based on structure defaults
         const newComponents: PromptComponent[] = struct.defaultComponents.map(label => {
             const existing = localComponents.find(c => c.label === label);
             return {
@@ -82,7 +82,7 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
       setLocalComponents(prev => prev.filter(c => c.id !== id));
   };
 
-  // Drag & Drop for Components
+  // Drag & Drop
   const handleDragStart = (e: React.DragEvent, index: number) => {
     e.dataTransfer.setData('text/plain', index.toString());
   };
@@ -103,7 +103,7 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
     setLocalComponents(newComps);
   };
 
-  // Appending values to main text areas
+  // Appending values
   const appendToContent = (target: TargetType, value: string) => {
       if (!value) return;
       if (target === 'SYSTEM') {
@@ -121,13 +121,11 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
 
   // AI Generation
   const handleGeneratePrompt = async () => {
-      // 1. Generate System
       setIsGeneratingSystem(true);
       const systemResult = await assemblePromptWithAI(localComponents, 'SYSTEM');
       setFormData(prev => ({ ...prev, systemContent: systemResult }));
       setIsGeneratingSystem(false);
 
-      // 2. Generate User
       setIsGeneratingUser(true);
       const userResult = await assemblePromptWithAI(localComponents, 'USER');
       setFormData(prev => ({ ...prev, userContent: userResult }));
@@ -143,6 +141,14 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
         components: localComponents,
         structureId: selectedStructureId
     });
+  };
+
+  const addTag = (tag: string) => {
+      const currentTags = tagInput.split(',').map(t => t.trim()).filter(Boolean);
+      if (!currentTags.includes(tag)) {
+          const newTags = [...currentTags, tag].join(', ');
+          setTagInput(newTags);
+      }
   };
 
   const copyToClipboard = (text: string) => navigator.clipboard.writeText(text);
@@ -175,88 +181,123 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
 
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col lg:flex-row overflow-hidden">
             
-            {/* Left Column: System & User Prompts (The Result) */}
+            {/* Left Column: Result & Inputs */}
             <div className="w-full lg:w-1/2 p-6 overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-800 space-y-6">
-                <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider mb-4">Готовый промпт</h3>
                 
+                {/* Meta Fields */}
+                <div className="space-y-4">
+                    <input
+                        required
+                        type="text"
+                        value={formData.title}
+                        onChange={e => setFormData({...formData, title: e.target.value})}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white font-medium focus:border-indigo-500 outline-none placeholder-slate-500"
+                        placeholder="Название промпта"
+                    />
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Категория</label>
+                             <select
+                                value={formData.category}
+                                onChange={e => setFormData({...formData, category: e.target.value})}
+                                className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none"
+                            >
+                                {categories.filter(c => c !== 'Все').map(c => (
+                                    <option key={c} value={c}>{c}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Статус</label>
+                            <div className="flex bg-slate-950 rounded border border-slate-700 p-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setFormData({...formData, verificationStatus: 'ON_REVIEW'})}
+                                    className={`flex-1 flex items-center justify-center gap-1 text-xs py-1 rounded ${formData.verificationStatus === 'ON_REVIEW' ? 'bg-amber-900/40 text-amber-300 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                                >
+                                    <Clock size={12} /> На проверке
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setFormData({...formData, verificationStatus: 'VERIFIED'})}
+                                    className={`flex-1 flex items-center justify-center gap-1 text-xs py-1 rounded ${formData.verificationStatus === 'VERIFIED' ? 'bg-emerald-900/40 text-emerald-300 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                                >
+                                    <CheckCircle2 size={12} /> Проверено
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <textarea
+                        value={formData.description}
+                        onChange={e => setFormData({...formData, description: e.target.value})}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-indigo-500 outline-none resize-none h-20 placeholder-slate-500"
+                        placeholder="Краткое описание того, что делает этот промпт..."
+                    />
+
+                    <div>
+                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Метки</label>
+                         <input type="text" value={tagInput} onChange={e => setTagInput(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none mb-2" placeholder="SEO, Code, Marketing..." />
+                         {availableTags.length > 0 && (
+                             <div className="flex flex-wrap gap-1">
+                                 {availableTags.slice(0, 8).map(t => (
+                                     <button type="button" key={t} onClick={() => addTag(t)} className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-400 px-2 py-0.5 rounded border border-slate-700">
+                                         + {t}
+                                     </button>
+                                 ))}
+                             </div>
+                         )}
+                    </div>
+                </div>
+
+                <div className="h-px bg-slate-800 my-4"></div>
+
+                <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider mb-2">Контент</h3>
+
                 {/* System Prompt */}
-                <div className="space-y-2">
+                <div className="space-y-1">
                     <div className="flex justify-between items-center">
-                        <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
-                            <Cpu size={16} className="text-purple-400" /> SYSTEM
+                        <label className="flex items-center gap-2 text-xs font-medium text-slate-300">
+                            <Cpu size={14} className="text-purple-400" /> SYSTEM INSTRUCTION
                         </label>
-                        <button type="button" onClick={() => copyToClipboard(formData.systemContent)} className="text-slate-500 hover:text-white p-1"><Copy size={14}/></button>
+                        <button type="button" onClick={() => copyToClipboard(formData.systemContent)} className="text-slate-500 hover:text-white p-1"><Copy size={12}/></button>
                     </div>
                     <textarea
                         value={formData.systemContent}
                         onChange={e => setFormData({...formData, systemContent: e.target.value})}
-                        className="w-full h-48 bg-slate-950 border border-slate-700 rounded-lg p-3 text-white font-mono text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-y"
-                        placeholder="Системная инструкция..."
+                        className="w-full h-40 bg-slate-950 border border-slate-700 rounded-lg p-3 text-white font-mono text-xs focus:ring-1 focus:ring-indigo-500 outline-none resize-y"
+                        placeholder="Системная роль и правила..."
                     />
                 </div>
 
                 {/* User Prompt */}
-                <div className="space-y-2">
+                <div className="space-y-1">
                     <div className="flex justify-between items-center">
-                        <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
-                            <User size={16} className="text-blue-400" /> USER
+                        <label className="flex items-center gap-2 text-xs font-medium text-slate-300">
+                            <User size={14} className="text-blue-400" /> USER PROMPT
                         </label>
-                        <button type="button" onClick={() => copyToClipboard(formData.userContent)} className="text-slate-500 hover:text-white p-1"><Copy size={14}/></button>
+                        <button type="button" onClick={() => copyToClipboard(formData.userContent)} className="text-slate-500 hover:text-white p-1"><Copy size={12}/></button>
                     </div>
                     <textarea
                         value={formData.userContent}
                         onChange={e => setFormData({...formData, userContent: e.target.value})}
-                        className="w-full h-48 bg-slate-950 border border-slate-700 rounded-lg p-3 text-white font-mono text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-y"
+                        className="w-full h-40 bg-slate-950 border border-slate-700 rounded-lg p-3 text-white font-mono text-xs focus:ring-1 focus:ring-indigo-500 outline-none resize-y"
                         placeholder="Запрос пользователя..."
                     />
-                </div>
-
-                {/* Basic Info (Title, etc.) - moved here to save vertical space on right */}
-                <div className="pt-6 border-t border-slate-800 space-y-4">
-                    <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider mb-2">Метаданные</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                        <input
-                            required
-                            type="text"
-                            value={formData.title}
-                            onChange={e => setFormData({...formData, title: e.target.value})}
-                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white"
-                            placeholder="Название"
-                        />
-                         <select
-                            value={formData.category}
-                            onChange={e => setFormData({...formData, category: e.target.value as any})}
-                            className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white"
-                        >
-                            {Object.values(Category).filter(c => c !== Category.ALL).map(c => (
-                                <option key={c} value={c}>{c}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <input
-                        type="text"
-                        value={formData.description}
-                        onChange={e => setFormData({...formData, description: e.target.value})}
-                        className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white"
-                        placeholder="Краткое описание"
-                    />
-                     <div className="grid grid-cols-2 gap-4">
-                         <input type="text" value={tagInput} onChange={e => setTagInput(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white" placeholder="Теги (через запятую)" />
-                         <input type="text" value={formData.modelRecommendation} onChange={e => setFormData({...formData, modelRecommendation: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white" placeholder="Модель (Gemini, GPT-4...)" />
-                    </div>
                 </div>
             </div>
 
             {/* Right Column: Components Builder */}
             <div className="w-full lg:w-1/2 p-6 overflow-y-auto bg-slate-950">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider">Компоненты промпта</h3>
+                    <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider">Конструктор</h3>
                     <select 
                         value={selectedStructureId} 
                         onChange={(e) => handleStructureChange(e.target.value)}
-                        className="bg-slate-900 border border-slate-700 rounded text-xs text-slate-300 px-2 py-1"
+                        className="bg-slate-900 border border-slate-700 rounded text-xs text-slate-300 px-2 py-1 focus:border-indigo-500 outline-none"
                     >
-                        <option value="">Выбрать структуру...</option>
+                        <option value="">Шаблон структуры...</option>
                         {structures.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
                     </select>
                 </div>
@@ -321,30 +362,9 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
                 >
                     <Plus size={16} /> Добавить компонент вручную
                 </button>
-
-                 {/* Extra fields like Example Output */}
-                 <div className="mt-8 pt-6 border-t border-slate-800 space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-1">Пример вывода (Опционально)</label>
-                        <textarea
-                            value={formData.exampleOutput || ''}
-                            onChange={e => setFormData({...formData, exampleOutput: e.target.value})}
-                            className="w-full h-20 bg-slate-950 border border-slate-700 rounded p-2 text-xs font-mono text-white"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-1">Заметки</label>
-                         <textarea
-                            value={formData.notes || ''}
-                            onChange={e => setFormData({...formData, notes: e.target.value})}
-                            className="w-full h-16 bg-slate-950 border border-slate-700 rounded p-2 text-xs text-white"
-                        />
-                    </div>
-                 </div>
             </div>
             
-            {/* Floating Footer Action */}
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-slate-900 border-t border-slate-800 flex justify-end gap-3">
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-slate-900 border-t border-slate-800 flex justify-end gap-3 z-10">
                  <button
                     type="button"
                     onClick={onClose}
@@ -357,7 +377,7 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
                     className="px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-lg shadow-indigo-500/20 flex items-center gap-2"
                  >
                     <Save size={18} />
-                    Сохранить промпт
+                    Сохранить
                  </button>
             </div>
         </form>

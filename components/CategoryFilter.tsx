@@ -1,25 +1,17 @@
+
 import React from 'react';
-import { Category } from '../types';
-import { LayoutGrid, User, Type, Lightbulb, Terminal, Image as ImageIcon } from 'lucide-react';
+import { LayoutGrid, Hash } from 'lucide-react';
 
 interface CategoryFilterProps {
-  selectedCategory: Category;
-  onSelect: (category: Category) => void;
+  categories: string[];
+  selectedCategory: string;
+  onSelect: (category: string) => void;
 }
 
-const CATEGORY_ICONS: Record<Category, React.ReactNode> = {
-  [Category.ALL]: <LayoutGrid size={18} />,
-  [Category.ROLES]: <User size={18} />,
-  [Category.TEXT]: <Type size={18} />,
-  [Category.IDEAS]: <Lightbulb size={18} />,
-  [Category.TECHNICAL]: <Terminal size={18} />,
-  [Category.VISUAL]: <ImageIcon size={18} />,
-};
-
-export const CategoryFilter: React.FC<CategoryFilterProps> = ({ selectedCategory, onSelect }) => {
+export const CategoryFilter: React.FC<CategoryFilterProps> = ({ categories, selectedCategory, onSelect }) => {
   return (
     <nav className="space-y-1">
-      {Object.values(Category).map((category) => (
+      {categories.map((category) => (
         <button
           key={category}
           onClick={() => onSelect(category)}
@@ -30,7 +22,7 @@ export const CategoryFilter: React.FC<CategoryFilterProps> = ({ selectedCategory
           }`}
         >
           <span className={`${selectedCategory === category ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'}`}>
-            {CATEGORY_ICONS[category]}
+            {category === 'Все' ? <LayoutGrid size={18} /> : <Hash size={18} />}
           </span>
           {category}
         </button>

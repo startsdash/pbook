@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Prompt } from '../types';
-import { X, Copy, Check, Edit, Trash2, Layers, User, Cpu, Download, FileText, FileJson, ChevronDown } from 'lucide-react';
+import { X, Copy, Check, Edit, Trash2, Layers, User, Cpu, Download, FileText, FileJson, ChevronDown, CheckCircle2, Clock } from 'lucide-react';
 import { exportPromptToMarkdown, exportPromptToJson } from '../utils/fileExport';
 
 interface PromptDetailModalProps {
@@ -44,10 +44,21 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
             <div>
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                     {prompt.title}
-                    <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">
-                        {prompt.modelRecommendation}
-                    </span>
                 </h2>
+                <div className="mt-1 flex items-center gap-2">
+                    <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                        {prompt.category}
+                    </span>
+                    {prompt.verificationStatus === 'VERIFIED' ? (
+                        <span className="flex items-center text-xs font-bold text-emerald-400 gap-1">
+                            <CheckCircle2 size={12} /> Проверено
+                        </span>
+                    ) : (
+                        <span className="flex items-center text-xs font-bold text-amber-400 gap-1">
+                            <Clock size={12} /> На проверке
+                        </span>
+                    )}
+                </div>
             </div>
             <div className="flex items-center gap-2">
                 
@@ -130,7 +141,7 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 text-indigo-400 text-sm font-bold uppercase tracking-wider">
                             <Cpu size={16} />
-                            System Prompt
+                            System Instruction
                         </div>
                         <button 
                             onClick={() => copyToClipboard(prompt.systemContent, true)}
@@ -164,15 +175,6 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
                         {prompt.userContent || <span className="text-slate-600 italic">User prompt отсутствует</span>}
                     </div>
                 </div>
-
-                 {prompt.exampleOutput && (
-                    <div className="mt-8 pt-6 border-t border-slate-800">
-                        <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">Пример результата</h3>
-                        <div className="bg-slate-900 p-4 rounded border border-slate-800 text-xs font-mono text-slate-400 whitespace-pre-wrap">
-                            {prompt.exampleOutput}
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* Sidebar: Info & Components */}
@@ -182,17 +184,10 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
                     <p className="text-sm text-slate-300 leading-relaxed">{prompt.description}</p>
                  </div>
 
-                 {prompt.notes && (
-                    <div className="mb-6 bg-amber-900/20 border border-amber-900/50 rounded-lg p-3 text-sm text-amber-200/80">
-                        <span className="font-bold text-amber-500 block mb-1">Примечание:</span>
-                        {prompt.notes}
-                    </div>
-                 )}
-
                  <div className="mb-6">
                     <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                         <Layers size={14} />
-                        Структура и компоненты
+                        Структура
                     </h3>
                     
                     {prompt.components && prompt.components.length > 0 ? (
