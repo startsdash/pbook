@@ -81,7 +81,7 @@ export default function App() {
   };
 
   const handleExportDatabase = () => {
-      exportPromptsToExcel(prompts);
+      exportPromptsToExcel(prompts, categories, availableTags);
   };
 
   const handleImportClick = () => {
@@ -93,24 +93,54 @@ export default function App() {
       if (!file) return;
 
       try {
-          const importedPrompts = await parseExcelDatabase(file);
+          const { prompts: importedPrompts, categories: importedCategories, tags: importedTags } = await parseExcelDatabase(file);
+          
           if (importedPrompts.length > 0) {
-              if (window.confirm(`Найдено ${importedPrompts.length} промптов. Заменить текущую базу (OK) или добавить к существующей (Cancel)?`)) {
+              const confirmMessage = `Найдено ${importedPrompts.length} промптов.\n\n` +
+                                     `OK — ПОЛНОСТЬЮ ЗАМЕНИТЬ текущую базу.\n` +
+                                     `Отмена — ОБЪЕДИНИТЬ (существующие записи обновятся, новые добавятся).`;
+
+              if (window.confirm(confirmMessage)) {
+                  // Option 1: Replace Database completely
                   setPrompts(importedPrompts);
+                  setCategories(importedCategories);
+                  setAvailableTags(importedTags);
+                  alert(`База успешно заменена. Загружено ${importedPrompts.length} промптов.`);
               } else {
-                  const existingIds = new Set(prompts.map(p => p.id));
-                  const newUniquePrompts = importedPrompts.filter(p => !existingIds.has(p.id));
-                  setPrompts([...prompts, ...newUniquePrompts]);
-                  alert(`Добавлено ${newUniquePrompts.length} новых промптов.`);
+                  // Option 2: Upsert / Merge
+                  // Create a map of current prompts by ID
+                  const promptMap = new Map(prompts.map(p => [p.id, p]));
+                  
+                  // Update existing or add new prompts from import
+                  importedPrompts.forEach(p => {
+                      promptMap.set(p.id, p);
+                  });
+                  
+                  const mergedPrompts = Array.from(promptMap.values());
+                  setPrompts(mergedPrompts);
+                  
+                  // Merge Categories (Set ensures uniqueness)
+                  const mergedCategoriesSet = new Set([...categories, ...importedCategories]);
+                  // Ensure 'Все' is preserved as the first item
+                  const mergedCategories = ['Все', ...Array.from(mergedCategoriesSet).filter(c => c !== 'Все')];
+                  setCategories(mergedCategories);
+                  
+                  // Merge Tags
+                  const mergedTags = Array.from(new Set([...availableTags, ...importedTags]));
+                  setAvailableTags(mergedTags);
+
+                  alert(`База объединена. Всего промптов теперь: ${mergedPrompts.length}`);
               }
-              // Ideally update categories/tags from import too, but skipping for simplicity
+          } else {
+              alert("Файл не содержит промптов.");
           }
       } catch (error) {
           console.error("Import failed", error);
           alert("Ошибка при чтении файла. Убедитесь, что это корректный Excel файл Prompt Book.");
+      } finally {
+          // Reset input to allow selecting the same file again if needed
+          if (fileInputRef.current) fileInputRef.current.value = '';
       }
-      
-      if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (

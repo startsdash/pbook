@@ -240,12 +240,25 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Метки</label>
                          <input type="text" value={tagInput} onChange={e => setTagInput(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none mb-2" placeholder="SEO, Code, Marketing..." />
                          {availableTags.length > 0 && (
-                             <div className="flex flex-wrap gap-1">
-                                 {availableTags.slice(0, 8).map(t => (
-                                     <button type="button" key={t} onClick={() => addTag(t)} className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-400 px-2 py-0.5 rounded border border-slate-700">
-                                         + {t}
-                                     </button>
-                                 ))}
+                             <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                                 {availableTags.map(t => {
+                                     // Helper to check if tag is already present in the input
+                                     const isSelected = tagInput.split(',').map(tag => tag.trim().toLowerCase()).includes(t.toLowerCase());
+                                     return (
+                                        <button 
+                                            type="button" 
+                                            key={t} 
+                                            onClick={() => addTag(t)} 
+                                            className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                                                isSelected 
+                                                    ? 'bg-indigo-600/20 text-indigo-300 border-indigo-600/40 cursor-default opacity-60' 
+                                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700 hover:text-white'
+                                            }`}
+                                        >
+                                            {isSelected ? t : `+ ${t}`}
+                                        </button>
+                                     );
+                                 })}
                              </div>
                          )}
                     </div>

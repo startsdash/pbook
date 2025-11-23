@@ -86,7 +86,12 @@ interface ExcelPromptRow {
     StructureID: string;
 }
 
-export const exportPromptsToExcel = (prompts: Prompt[]) => {
+interface ExcelSettingRow {
+    Type: 'Category' | 'Tag';
+    Value: string;
+}
+
+export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], tags: string[]) => {
     // Flatten data for Excel
     const rows: ExcelPromptRow[] = prompts.map(p => ({
         ID: p.id,
@@ -97,74 +102,134 @@ export const exportPromptsToExcel = (prompts: Prompt[]) => {
         SystemContent: p.systemContent,
         UserContent: p.userContent,
         VerificationStatus: p.verificationStatus,
-        ComponentsJSON: JSON.stringify(p.components),
+        ComponentsJSON: JSON.stringify(p.components || []),
         StructureID: p.structureId || ''
     }));
 
-    const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
+
+    // Sheet 1: Prompts
+    const worksheet = XLSX.utils.json_to_sheet(rows);
     XLSX.utils.book_append_sheet(workbook, worksheet, "Prompts");
 
-    // Auto-width for columns (rudimentary)
+    // Auto-width for columns
     const wscols = [
-        {wch: 10}, // ID
+        {wch: 15}, // ID
         {wch: 30}, // Title
-        {wch: 15}, // Category
-        {wch: 20}, // Tags
+        {wch: 20}, // Category
+        {wch: 25}, // Tags
         {wch: 40}, // Description
         {wch: 50}, // System
         {wch: 50}, // User
         {wch: 15}, // Status
+        {wch: 20}, // Components
+        {wch: 15}, // StructureID
     ];
     worksheet['!cols'] = wscols;
 
-    XLSX.writeFile(workbook, `PromptDatabase_${new Date().toLocaleDateString('ru-RU')}.xlsx`);
+    // Sheet 2: Settings (Categories & Tags)
+    // Filter out 'Все' from categories as it is a default UI constant
+    const uniqueCats = Array.from(new Set(categories)).filter(c => c && c !== 'Все');
+    const uniqueTags = Array.from(new Set(tags));
+
+    const settingsRows: ExcelSettingRow[] = [
+        ...uniqueCats.map(c => ({ Type: 'Category' as const, Value: c })),
+        ...uniqueTags.map(t => ({ Type: 'Tag' as const, Value: t }))
+    ];
+
+    if (settingsRows.length > 0) {
+        const settingsWorksheet = XLSX.utils.json_to_sheet(settingsRows);
+        XLSX.utils.book_append_sheet(workbook, settingsWorksheet, "Settings");
+    }
+
+    XLSX.writeFile(workbook, `PromptBook_DB_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
-export const parseExcelDatabase = async (file: File): Promise<Prompt[]> => {
+export const parseExcelDatabase = async (file: File): Promise<{ prompts: Prompt[], categories: string[], tags: string[] }> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         
         reader.onload = (e) => {
             try {
                 const data = e.target?.result;
-                const workbook = XLSX.read(data, { type: 'binary' });
-                const sheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[sheetName];
-                const json = XLSX.utils.sheet_to_json<ExcelPromptRow>(worksheet);
+                if (!data) {
+                    throw new Error("File content is empty");
+                }
 
-                const prompts: Prompt[] = json.map(row => {
+                // Use 'array' type for robustness across browsers
+                const workbook = XLSX.read(data, { type: 'array' });
+                
+                // 1. Parse Prompts
+                const sheetName = workbook.SheetNames.find(n => n === "Prompts") || workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const json = XLSX.utils.sheet_to_json<any>(worksheet);
+
+                const prompts: Prompt[] = json.map((row: any) => {
                     let parsedComponents: PromptComponent[] = [];
                     try {
-                        parsedComponents = JSON.parse(row.ComponentsJSON);
+                        if (row.ComponentsJSON && row.ComponentsJSON !== 'undefined') {
+                            parsedComponents = JSON.parse(String(row.ComponentsJSON));
+                        }
                     } catch (e) {
                         console.warn('Failed to parse components for row', row.ID);
                     }
 
+                    // Robust Status parsing (case insensitive)
                     let status: VerificationStatus = 'ON_REVIEW';
-                    if (row.VerificationStatus === 'VERIFIED') status = 'VERIFIED';
+                    const statusStr = String(row.VerificationStatus || '').trim().toUpperCase();
+                    if (statusStr === 'VERIFIED') status = 'VERIFIED';
+
+                    // Parse tags carefully
+                    const tagsRaw = row.Tags ? String(row.Tags) : '';
+                    const tagsList = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
 
                     return {
-                        id: row.ID ? String(row.ID) : Date.now().toString(),
-                        title: row.Title || 'Без названия',
-                        category: row.Category || 'Без категории',
-                        tags: row.Tags ? String(row.Tags).split(',').map(t => t.trim()).filter(Boolean) : [],
-                        description: row.Description || '',
-                        systemContent: row.SystemContent || '',
-                        userContent: row.UserContent || '',
+                        id: row.ID ? String(row.ID) : Math.random().toString(36).substr(2, 9),
+                        title: row.Title ? String(row.Title) : 'Без названия',
+                        category: row.Category ? String(row.Category) : 'Без категории',
+                        tags: tagsList,
+                        description: row.Description ? String(row.Description) : '',
+                        systemContent: row.SystemContent ? String(row.SystemContent) : '',
+                        userContent: row.UserContent ? String(row.UserContent) : '',
                         verificationStatus: status,
-                        structureId: row.StructureID || undefined,
+                        structureId: row.StructureID ? String(row.StructureID) : undefined,
                         components: parsedComponents
                     };
                 });
-                
-                resolve(prompts);
+
+                // 2. Parse Settings (if available)
+                let parsedCategories: string[] = [];
+                let parsedTags: string[] = [];
+
+                if (workbook.SheetNames.includes("Settings")) {
+                    const settingsSheet = workbook.Sheets["Settings"];
+                    const settingsJson = XLSX.utils.sheet_to_json<ExcelSettingRow>(settingsSheet);
+                    
+                    parsedCategories = settingsJson.filter(r => r.Type === 'Category').map(r => String(r.Value));
+                    parsedTags = settingsJson.filter(r => r.Type === 'Tag').map(r => String(r.Value));
+                }
+
+                // 3. Merge with metadata found in prompts (recovery mode)
+                const promptCategories = new Set(prompts.map(p => p.category));
+                const promptTags = new Set(prompts.flatMap(p => p.tags));
+
+                // Combine parsed settings with any categories/tags actually used in the prompts
+                const finalCategories = Array.from(new Set([...parsedCategories, ...promptCategories])).filter(c => c && c !== 'Все');
+                const finalTags = Array.from(new Set([...parsedTags, ...promptTags])).filter(Boolean);
+
+                // Always include 'Все' at the beginning
+                resolve({ 
+                    prompts, 
+                    categories: ['Все', ...finalCategories], 
+                    tags: finalTags 
+                });
             } catch (err) {
+                console.error("Excel parse error:", err);
                 reject(err);
             }
         };
         
         reader.onerror = (err) => reject(err);
-        reader.readAsBinaryString(file);
+        reader.readAsArrayBuffer(file);
     });
 };
