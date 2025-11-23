@@ -1,6 +1,6 @@
 import React from 'react';
 import { Category } from '../types';
-import { LayoutGrid, User, Type, Lightbulb, Terminal, Image } from 'lucide-react';
+import { LayoutGrid, User, Type, Lightbulb, Terminal, Image as ImageIcon } from 'lucide-react';
 
 interface CategoryFilterProps {
   selectedCategory: Category;
@@ -13,7 +13,7 @@ const CATEGORY_ICONS: Record<Category, React.ReactNode> = {
   [Category.TEXT]: <Type size={18} />,
   [Category.IDEAS]: <Lightbulb size={18} />,
   [Category.TECHNICAL]: <Terminal size={18} />,
-  [Category.VISUAL]: <Image size={18} />,
+  [Category.VISUAL]: <ImageIcon size={18} />,
 };
 
 export const CategoryFilter: React.FC<CategoryFilterProps> = ({ selectedCategory, onSelect }) => {

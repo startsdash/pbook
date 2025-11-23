@@ -3,9 +3,11 @@ import { GoogleGenAI } from "@google/genai";
 import { PromptComponent } from "../types";
 
 const getClient = () => {
-  const apiKey = process.env.API_KEY;
+  // Safely access process.env to avoid ReferenceError in strict browser environments
+  const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
+  
   if (!apiKey) {
-    console.error("API_KEY is missing from environment variables.");
+    console.error("API_KEY is missing. Ensure process.env.API_KEY is set.");
     return null;
   }
   return new GoogleGenAI({ apiKey });
