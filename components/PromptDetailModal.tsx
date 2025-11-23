@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
 import { Prompt } from '../types';
-import { X, Copy, Check, Edit, Trash2, Layers, User, Cpu } from 'lucide-react';
+import { X, Copy, Check, Edit, Trash2, Layers, User, Cpu, Download, FileText, FileJson, ChevronDown } from 'lucide-react';
+import { exportPromptToMarkdown, exportPromptToJson } from '../utils/fileExport';
 
 interface PromptDetailModalProps {
   prompt: Prompt;
@@ -14,6 +15,7 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
   const [copiedSystem, setCopiedSystem] = useState(false);
   const [copiedUser, setCopiedUser] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const copyToClipboard = (text: string, isSystem: boolean) => {
     navigator.clipboard.writeText(text);
@@ -48,6 +50,43 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
                 </h2>
             </div>
             <div className="flex items-center gap-2">
+                
+                {/* Export Menu */}
+                <div className="relative mr-2">
+                    <button 
+                        onClick={() => setShowExportMenu(!showExportMenu)}
+                        className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
+                    >
+                        <Download size={14} />
+                        Экспорт
+                        <ChevronDown size={12} className={`transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
+                    </button>
+                    
+                    {showExportMenu && (
+                        <>
+                            <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)}></div>
+                            <div className="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-20 overflow-hidden">
+                                <button 
+                                    onClick={() => { exportPromptToMarkdown(prompt); setShowExportMenu(false); }}
+                                    className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-left"
+                                >
+                                    <FileText size={16} className="text-indigo-400" />
+                                    Markdown (.md)
+                                </button>
+                                <button 
+                                    onClick={() => { exportPromptToJson(prompt); setShowExportMenu(false); }}
+                                    className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-left border-t border-slate-800"
+                                >
+                                    <FileJson size={16} className="text-amber-400" />
+                                    JSON (.json)
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                <div className="h-6 w-px bg-slate-800 mx-1"></div>
+
                 {!showDeleteConfirm ? (
                     <>
                         <button 
@@ -72,7 +111,9 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
                         <button onClick={() => setShowDeleteConfirm(false)} className="text-slate-400 hover:text-white text-xs px-2 py-1 hover:bg-slate-800 rounded">Нет</button>
                     </div>
                 )}
+                
                 <div className="h-6 w-px bg-slate-800 mx-1"></div>
+                
                 <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-800 transition-colors">
                     <X size={24} />
                 </button>

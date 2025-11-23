@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Category, Prompt, Structure } from './types';
 import { INITIAL_PROMPTS, INITIAL_STRUCTURES } from './constants';
 import { CategoryFilter } from './components/CategoryFilter';
@@ -7,7 +7,8 @@ import { PromptCard } from './components/PromptCard';
 import { PromptDetailModal } from './components/PromptDetailModal';
 import { PromptFormModal } from './components/PromptFormModal';
 import { StructureManagerModal } from './components/StructureManagerModal';
-import { Search, BookOpen, Sparkles, Plus, Layers } from 'lucide-react';
+import { Search, BookOpen, Sparkles, Plus, Layers, Download, Upload, Database } from 'lucide-react';
+import { exportPromptsToExcel, parseExcelDatabase } from './utils/fileExport';
 
 export default function App() {
   const [prompts, setPrompts] = useState<Prompt[]>(INITIAL_PROMPTS);
@@ -20,6 +21,9 @@ export default function App() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isStructureManagerOpen, setIsStructureManagerOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
+  
+  // File Input Ref
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Filter prompts based on category and search query
   const filteredPrompts = useMemo(() => {
@@ -61,9 +65,55 @@ export default function App() {
     setSelectedPrompt(null);
   };
 
+  const handleExportDatabase = () => {
+      exportPromptsToExcel(prompts);
+  };
+
+  const handleImportClick = () => {
+      fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      try {
+          const importedPrompts = await parseExcelDatabase(file);
+          if (importedPrompts.length > 0) {
+              if (window.confirm(`Найдено ${importedPrompts.length} промптов. Заменить текущую базу (OK) или добавить к существующей (Cancel)?`)) {
+                  setPrompts(importedPrompts);
+              } else {
+                  // Merge logic: Add only if ID doesn't exist, otherwise update? 
+                  // Simple merge: append all, generate new IDs if collision?
+                  // Let's just append for safety, filtering duplicates by ID would be better but let's keep it simple.
+                  // Actually, let's filter out IDs that already exist to prevent duplicate keys in React
+                  const existingIds = new Set(prompts.map(p => p.id));
+                  const newUniquePrompts = importedPrompts.filter(p => !existingIds.has(p.id));
+                  setPrompts([...prompts, ...newUniquePrompts]);
+                  alert(`Добавлено ${newUniquePrompts.length} новых промптов.`);
+              }
+          }
+      } catch (error) {
+          console.error("Import failed", error);
+          alert("Ошибка при чтении файла. Убедитесь, что это корректный Excel файл Prompt Book.");
+      }
+      
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden">
       
+      {/* Hidden File Input */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        accept=".xlsx, .xls"
+        className="hidden"
+      />
+
       {/* Sidebar */}
       <aside className="w-64 hidden md:flex flex-col border-r border-slate-800 bg-slate-950 flex-shrink-0">
         <div className="p-6 border-b border-slate-800 flex items-center gap-2">
@@ -95,15 +145,25 @@ export default function App() {
           <CategoryFilter selectedCategory={selectedCategory} onSelect={setSelectedCategory} />
         </div>
 
-        <div className="p-4 border-t border-slate-800">
-            <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                <div className="flex items-center gap-2 text-indigo-400 mb-2">
-                    <Sparkles size={16} />
-                    <span className="text-xs font-bold uppercase">Совет дня</span>
-                </div>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                    Разделяйте System и User промпты для лучшего контроля над поведением модели.
-                </p>
+        <div className="p-4 border-t border-slate-800 space-y-2">
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Управление базой</div>
+            <div className="grid grid-cols-2 gap-2">
+                <button 
+                    onClick={handleExportDatabase}
+                    className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-2 rounded-lg transition-all text-xs text-slate-400 hover:text-white"
+                    title="Экспорт в Excel"
+                >
+                    <Download size={16} className="text-emerald-500" />
+                    Экспорт
+                </button>
+                <button 
+                    onClick={handleImportClick}
+                    className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-2 rounded-lg transition-all text-xs text-slate-400 hover:text-white"
+                    title="Импорт из Excel"
+                >
+                    <Upload size={16} className="text-blue-500" />
+                    Импорт
+                </button>
             </div>
         </div>
       </aside>
@@ -118,8 +178,8 @@ export default function App() {
                  <h1 className="font-bold text-lg">Prompt Book</h1>
             </div>
             <div className="flex gap-2">
-                <button onClick={() => setIsStructureManagerOpen(true)} className="text-slate-400 p-2">
-                    <Layers size={24} />
+                <button onClick={handleImportClick} className="text-slate-400 p-2">
+                    <Database size={24} />
                 </button>
                 <button onClick={handleCreatePrompt} className="text-indigo-400 p-2">
                     <Plus size={24} />
