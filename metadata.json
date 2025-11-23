@@ -1,0 +1,5 @@
+{
+  "name": "Prompt Book",
+  "description": "Профессиональная библиотека для организации, доработки и тестирования AI промптов с использованием фреймворка COSTAR и Gemini.",
+  "requestFramePermissions": []
+}
