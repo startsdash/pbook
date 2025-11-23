@@ -1,5 +1,5 @@
 
-import { Prompt, PromptComponent, VerificationStatus } from '../types';
+import { Prompt, PromptComponent, VerificationStatus, Structure } from '../types';
 import * as XLSX from 'xlsx';
 
 /**
@@ -86,14 +86,21 @@ interface ExcelPromptRow {
     StructureID: string;
 }
 
+interface ExcelStructureRow {
+    ID: string;
+    Title: string;
+    Description: string;
+    ComponentsJSON: string; // Serialized JSON array of strings
+}
+
 interface ExcelSettingRow {
     Type: 'Category' | 'Tag';
     Value: string;
 }
 
-export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], tags: string[]) => {
-    // Flatten data for Excel
-    const rows: ExcelPromptRow[] = prompts.map(p => ({
+export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], tags: string[], structures: Structure[]) => {
+    // 1. Prepare Prompt Rows
+    const promptRows: ExcelPromptRow[] = prompts.map(p => ({
         ID: p.id,
         Title: p.title,
         Category: p.category,
@@ -106,14 +113,22 @@ export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], ta
         StructureID: p.structureId || ''
     }));
 
+    // 2. Prepare Structure Rows
+    const structureRows: ExcelStructureRow[] = structures.map(s => ({
+        ID: s.id,
+        Title: s.title,
+        Description: s.description || '',
+        ComponentsJSON: JSON.stringify(s.defaultComponents || [])
+    }));
+
     const workbook = XLSX.utils.book_new();
 
     // Sheet 1: Prompts
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Prompts");
+    const promptWorksheet = XLSX.utils.json_to_sheet(promptRows);
+    XLSX.utils.book_append_sheet(workbook, promptWorksheet, "Prompts");
 
     // Auto-width for columns
-    const wscols = [
+    promptWorksheet['!cols'] = [
         {wch: 15}, // ID
         {wch: 30}, // Title
         {wch: 20}, // Category
@@ -125,9 +140,20 @@ export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], ta
         {wch: 20}, // Components
         {wch: 15}, // StructureID
     ];
-    worksheet['!cols'] = wscols;
 
-    // Sheet 2: Settings (Categories & Tags)
+    // Sheet 2: Structures
+    if (structureRows.length > 0) {
+        const structureWorksheet = XLSX.utils.json_to_sheet(structureRows);
+        XLSX.utils.book_append_sheet(workbook, structureWorksheet, "Structures");
+        structureWorksheet['!cols'] = [
+            {wch: 15}, // ID
+            {wch: 30}, // Title
+            {wch: 40}, // Description
+            {wch: 40}, // ComponentsJSON
+        ];
+    }
+
+    // Sheet 3: Settings (Categories & Tags)
     // Filter out 'Все' from categories as it is a default UI constant
     const uniqueCats = Array.from(new Set(categories)).filter(c => c && c !== 'Все');
     const uniqueTags = Array.from(new Set(tags));
@@ -145,7 +171,7 @@ export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], ta
     XLSX.writeFile(workbook, `PromptBook_DB_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
-export const parseExcelDatabase = async (file: File): Promise<{ prompts: Prompt[], categories: string[], tags: string[] }> => {
+export const parseExcelDatabase = async (file: File): Promise<{ prompts: Prompt[], categories: string[], tags: string[], structures: Structure[] }> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         
@@ -197,7 +223,32 @@ export const parseExcelDatabase = async (file: File): Promise<{ prompts: Prompt[
                     };
                 });
 
-                // 2. Parse Settings (if available)
+                // 2. Parse Structures
+                let structures: Structure[] = [];
+                if (workbook.SheetNames.includes("Structures")) {
+                    const structSheet = workbook.Sheets["Structures"];
+                    const structJson = XLSX.utils.sheet_to_json<any>(structSheet);
+                    
+                    structures = structJson.map((row: any) => {
+                        let defaults: string[] = [];
+                        try {
+                             if (row.ComponentsJSON && row.ComponentsJSON !== 'undefined') {
+                                defaults = JSON.parse(String(row.ComponentsJSON));
+                             }
+                        } catch (e) {
+                            console.warn('Failed to parse structure components', row.ID);
+                        }
+
+                        return {
+                            id: row.ID ? String(row.ID) : Date.now().toString(),
+                            title: row.Title ? String(row.Title) : 'Imported Structure',
+                            description: row.Description ? String(row.Description) : '',
+                            defaultComponents: Array.isArray(defaults) ? defaults : []
+                        };
+                    });
+                }
+
+                // 3. Parse Settings (if available)
                 let parsedCategories: string[] = [];
                 let parsedTags: string[] = [];
 
@@ -209,7 +260,8 @@ export const parseExcelDatabase = async (file: File): Promise<{ prompts: Prompt[
                     parsedTags = settingsJson.filter(r => r.Type === 'Tag').map(r => String(r.Value));
                 }
 
-                // 3. Merge with metadata found in prompts (recovery mode)
+                // 4. Merge with metadata found in prompts (recovery mode)
+                // We use Sets to avoid duplicates, but strictly respect the "Settings" sheet if it exists to avoid tag/category confusion.
                 const promptCategories = new Set(prompts.map(p => p.category));
                 const promptTags = new Set(prompts.flatMap(p => p.tags));
 
@@ -217,11 +269,11 @@ export const parseExcelDatabase = async (file: File): Promise<{ prompts: Prompt[
                 const finalCategories = Array.from(new Set([...parsedCategories, ...promptCategories])).filter(c => c && c !== 'Все');
                 const finalTags = Array.from(new Set([...parsedTags, ...promptTags])).filter(Boolean);
 
-                // Always include 'Все' at the beginning
                 resolve({ 
                     prompts, 
                     categories: ['Все', ...finalCategories], 
-                    tags: finalTags 
+                    tags: finalTags,
+                    structures 
                 });
             } catch (err) {
                 console.error("Excel parse error:", err);

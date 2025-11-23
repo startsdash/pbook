@@ -87,7 +87,7 @@ export default function App() {
   };
 
   const handleExportDatabase = () => {
-      exportPromptsToExcel(prompts, categories, availableTags);
+      exportPromptsToExcel(prompts, categories, availableTags, structures);
       setIsMobileMenuOpen(false);
   };
 
@@ -106,7 +106,12 @@ export default function App() {
       if (!file) return;
 
       try {
-          const { prompts: importedPrompts, categories: importedCategories, tags: importedTags } = await parseExcelDatabase(file);
+          const { 
+              prompts: importedPrompts, 
+              categories: importedCategories, 
+              tags: importedTags,
+              structures: importedStructures
+          } = await parseExcelDatabase(file);
           
           if (importedPrompts.length > 0) {
               const confirmMessage = `Найдено ${importedPrompts.length} промптов.\n\n` +
@@ -118,23 +123,36 @@ export default function App() {
                   setPrompts(importedPrompts);
                   setCategories(importedCategories);
                   setAvailableTags(importedTags);
+                  if (importedStructures.length > 0) {
+                      setStructures(importedStructures);
+                  }
                   alert(`База успешно заменена. Загружено ${importedPrompts.length} промптов.`);
               } else {
-                  // Option 2: Upsert / Merge
+                  // Option 2: Upsert / Merge Prompts
                   const promptMap = new Map(prompts.map(p => [p.id, p]));
                   importedPrompts.forEach(p => {
                       promptMap.set(p.id, p);
                   });
-                  
                   const mergedPrompts = Array.from(promptMap.values());
                   setPrompts(mergedPrompts);
                   
+                  // Merge Categories
                   const mergedCategoriesSet = new Set([...categories, ...importedCategories]);
                   const mergedCategories = ['Все', ...Array.from(mergedCategoriesSet).filter(c => c !== 'Все')];
                   setCategories(mergedCategories);
                   
+                  // Merge Tags
                   const mergedTags = Array.from(new Set([...availableTags, ...importedTags]));
                   setAvailableTags(mergedTags);
+
+                  // Merge Structures
+                  if (importedStructures.length > 0) {
+                      const structureMap = new Map(structures.map(s => [s.id, s]));
+                      importedStructures.forEach(s => {
+                          structureMap.set(s.id, s);
+                      });
+                      setStructures(Array.from(structureMap.values()));
+                  }
 
                   alert(`База объединена. Всего промптов теперь: ${mergedPrompts.length}`);
               }
@@ -154,6 +172,7 @@ export default function App() {
           setPrompts(data.prompts || []);
           setCategories(data.categories || INITIAL_CATEGORIES);
           setAvailableTags(data.tags || INITIAL_TAGS);
+          // Note: Cloud Sync structure logic should be updated if backup format supports it in future
       }
   };
 

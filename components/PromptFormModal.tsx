@@ -42,6 +42,10 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
       setSelectedStructureId(initialData.structureId || '');
     } else {
       setFormData({ ...EMPTY_PROMPT, id: Date.now().toString() } as Prompt);
+      // Reset logic for new prompt
+      setTagInput('');
+      setLocalComponents([]);
+      setSelectedStructureId('');
     }
   }, [initialData]);
 
@@ -185,10 +189,15 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+        {/* 
+            FIX: 
+            - Mobile: overflow-y-auto on FORM, children h-auto.
+            - Desktop: overflow-hidden on FORM, children overflow-y-auto h-full.
+        */}
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden relative">
             
             {/* Left Column: Result & Inputs */}
-            <div className="w-full lg:w-1/2 p-4 sm:p-6 overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-800 space-y-6 scrollbar-thin scrollbar-thumb-slate-800 pb-20 lg:pb-6">
+            <div className="w-full lg:w-1/2 p-4 sm:p-6 h-auto lg:h-full lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-800 space-y-6 scrollbar-thin scrollbar-thumb-slate-800 pb-6 lg:pb-20">
                 
                 {/* Meta Fields */}
                 <div className="space-y-4">
@@ -307,7 +316,7 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
             </div>
 
             {/* Right Column: Components Builder */}
-            <div className="w-full lg:w-1/2 p-4 sm:p-6 overflow-y-auto bg-slate-950 border-t lg:border-t-0 border-slate-800 pb-20 lg:pb-6">
+            <div className="w-full lg:w-1/2 p-4 sm:p-6 h-auto lg:h-full lg:overflow-y-auto bg-slate-900 border-t lg:border-t-0 border-slate-800 pb-20">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
                     <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider">Конструктор</h3>
                     <select 
