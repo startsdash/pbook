@@ -49,20 +49,22 @@ export const assemblePromptWithAI = async (components: PromptComponent[], target
     const filteredComponents = components.filter(c => c.target === target && c.value.trim() !== '');
     if (filteredComponents.length === 0) return "";
 
-    const inputData = filteredComponents.map(c => `${c.label}: ${c.value}`).join('\n---\n');
+    const inputData = filteredComponents.map(c => `Label: ${c.label}\nContent: ${c.value}`).join('\n---\n');
 
+    // Instructing Gemini to act as a prompt engineer to format the components nicely
     const prompt = `
-    Act as a Prompt Engineering Expert.
-    I have a set of prompt components (Label and Content).
-    Please assemble them into a single, cohesive, professional ${target === 'SYSTEM' ? 'System Instruction' : 'User Prompt'} using Markdown.
+    Act as a professional Prompt Engineer.
+    Your task is to assemble a set of prompt components into a single, cohesive ${target === 'SYSTEM' ? 'System Instruction' : 'User Prompt'} using Markdown.
+    
+    The input components are provided below.
     
     Rules:
-    - Use headers (### Label) for clarity where appropriate.
-    - Do not change the core meaning of the content.
-    - Improve readability.
-    - Return ONLY the formatted prompt text, nothing else.
+    1. Use Markdown headers (e.g. ### LabelName) for each component to maintain structure and clarity.
+    2. Do not change the meaning of the content, but you may fix grammar or improve flow slightly if necessary.
+    3. Preserve the language of the input content (Russian).
+    4. Return ONLY the formatted prompt text. Do not add any conversational filler or explanations.
     
-    Components:
+    Input Components:
     ${inputData}
     `;
 
@@ -74,7 +76,7 @@ export const assemblePromptWithAI = async (components: PromptComponent[], target
         return response.text || "";
     } catch (e) {
         console.error("Error assembling prompt", e);
-        // Fallback to simple join
+        // Fallback to simple join if AI fails
         return filteredComponents.map(c => `### ${c.label}\n${c.value}`).join('\n\n');
     }
 };

@@ -5,26 +5,26 @@ export const INITIAL_STRUCTURES: Structure[] = [
   {
     id: 'costar',
     title: 'COSTAR Framework',
-    description: 'Context, Objective, Style, Tone, Audience, Response Format',
-    defaultComponents: ['Context', 'Objective', 'Style', 'Tone', 'Audience', 'Response Format']
+    description: 'Контекст, Задача, Стиль, Тон, Аудитория, Формат',
+    defaultComponents: ['Контекст', 'Задача', 'Стиль', 'Тон', 'Аудитория', 'Формат ответа']
   },
   {
     id: 'tag',
     title: 'TAG Framework',
-    description: 'Task, Action, Goal',
-    defaultComponents: ['Task', 'Action', 'Goal', 'Context']
+    description: 'Задача, Действие, Цель',
+    defaultComponents: ['Задача', 'Действие', 'Цель', 'Контекст']
   },
   {
     id: 'rtf',
     title: 'RTF Framework',
-    description: 'Role, Task, Format',
-    defaultComponents: ['Role', 'Task', 'Format', 'Constraints']
+    description: 'Роль, Задача, Формат',
+    defaultComponents: ['Роль', 'Задача', 'Формат', 'Ограничения']
   },
   {
     id: 'midjourney',
     title: 'Midjourney Standard',
-    description: 'Subject, Medium, Style, Parameters',
-    defaultComponents: ['Subject', 'Medium', 'Environment', 'Lighting', 'Color', 'Mood', 'Composition', 'Parameters (--ar, --v)']
+    description: 'Объект, Среда, Стиль, Параметры',
+    defaultComponents: ['Объект', 'Среда', 'Окружение', 'Освещение', 'Цвет', 'Настроение', 'Композиция', 'Параметры (--ar, --v)']
   }
 ];
 
@@ -36,30 +36,30 @@ export const INITIAL_PROMPTS: Prompt[] = [
     tags: ['Маркетинг', 'Копирайтинг', 'SEO'],
     modelRecommendation: 'Gemini 2.5 Flash / GPT-4',
     description: 'Генерирует структурированную, SEO-оптимизированную статью.',
-    systemContent: `### Context
+    systemContent: `### Контекст
 Я профессиональный SEO-копирайтер для блога в индустрии [ИНДУСТРИЯ].
 
-### Style
+### Стиль
 Информативный, авторитетный, но доступный.
 
-### Tone
+### Тон
 Вовлекающий и профессиональный.
 
-### Response Format
+### Формат ответа
 Markdown с заголовками H1, H2, H3. В начале добавь раздел с ключевыми выводами (bullet points).`,
-    userContent: `### Objective
+    userContent: `### Задача
 Напиши подробную, SEO-оптимизированную статью на тему [КЛЮЧЕВОЕ_СЛОВО].
 
-### Audience
+### Аудитория
 [ЦЕЛЕВАЯ_АУДИТОРИЯ], ищущая практические советы.`,
     structureId: 'costar',
     components: [
-      { id: 'c1', label: 'Context', value: 'Я профессиональный SEO-копирайтер для блога в индустрии [ИНДУСТРИЯ].', target: 'SYSTEM' },
-      { id: 'c2', label: 'Objective', value: 'Напиши подробную, SEO-оптимизированную статью на тему [КЛЮЧЕВОЕ_СЛОВО].', target: 'USER' },
-      { id: 'c3', label: 'Style', value: 'Информативный, авторитетный, но доступный.', target: 'SYSTEM' },
-      { id: 'c4', label: 'Tone', value: 'Вовлекающий и профессиональный.', target: 'SYSTEM' },
-      { id: 'c5', label: 'Audience', value: '[ЦЕЛЕВАЯ_АУДИТОРИЯ], ищущая практические советы.', target: 'USER' },
-      { id: 'c6', label: 'Response Format', value: 'Markdown с заголовками H1, H2, H3.', target: 'SYSTEM' }
+      { id: 'c1', label: 'Контекст', value: 'Я профессиональный SEO-копирайтер для блога в индустрии [ИНДУСТРИЯ].', target: 'SYSTEM' },
+      { id: 'c2', label: 'Задача', value: 'Напиши подробную, SEO-оптимизированную статью на тему [КЛЮЧЕВОЕ_СЛОВО].', target: 'USER' },
+      { id: 'c3', label: 'Стиль', value: 'Информативный, авторитетный, но доступный.', target: 'SYSTEM' },
+      { id: 'c4', label: 'Тон', value: 'Вовлекающий и профессиональный.', target: 'SYSTEM' },
+      { id: 'c5', label: 'Аудитория', value: '[ЦЕЛЕВАЯ_АУДИТОРИЯ], ищущая практические советы.', target: 'USER' },
+      { id: 'c6', label: 'Формат ответа', value: 'Markdown с заголовками H1, H2, H3. В начале добавь раздел с ключевыми выводами (bullet points).', target: 'SYSTEM' }
     ],
     notes: 'Лучше работает, если указать конкретный поисковый запрос.',
     exampleOutput: `# Полный гид по [КЛЮЧЕВОЕ_СЛОВО]\n...`
@@ -82,9 +82,9 @@ Markdown с заголовками H1, H2, H3. В начале добавь ра
 3. Убедись, что типы TypeScript строгие.`,
     structureId: 'rtf',
     components: [
-        { id: 'r1', label: 'Role', value: 'World-Class Senior React Engineer', target: 'SYSTEM' },
-        { id: 'r2', label: 'Task', value: 'Провести ревью кода, найти проблемы, предложить улучшения.', target: 'USER' },
-        { id: 'r3', label: 'Constraints', value: 'Использовать Modern React (Hooks), строгий TypeScript.', target: 'SYSTEM' }
+        { id: 'r1', label: 'Роль', value: 'World-Class Senior React Engineer', target: 'SYSTEM' },
+        { id: 'r2', label: 'Задача', value: 'Провести ревью кода, найти проблемы, предложить улучшения.', target: 'USER' },
+        { id: 'r3', label: 'Ограничения', value: 'Использовать Modern React (Hooks), строгий TypeScript.', target: 'SYSTEM' }
     ],
     notes: 'Вставьте код непосредственно в переменную [ФРАГМЕНТ_КОДА].'
   }

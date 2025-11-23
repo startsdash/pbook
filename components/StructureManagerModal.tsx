@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Structure } from '../types';
-import { X, Plus, Trash2, GripVertical, Save } from 'lucide-react';
+import { X, Plus, Trash2, GripVertical, Save, Layers } from 'lucide-react';
 
 interface StructureManagerModalProps {
   structures: Structure[];
@@ -36,7 +36,7 @@ export const StructureManagerModal: React.FC<StructureManagerModalProps> = ({ st
     setEditId(newId);
     setEditTitle('Новая структура');
     setEditDesc('');
-    setEditComponents(['Context', 'Task']);
+    setEditComponents(['Контекст', 'Задача']);
     setIsEditing(true);
   };
 
@@ -118,7 +118,7 @@ export const StructureManagerModal: React.FC<StructureManagerModalProps> = ({ st
         
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <LayersIcon size={24} className="text-indigo-500" />
+            <Layers size={24} className="text-indigo-500" />
             Структуры промпта
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
@@ -199,7 +199,7 @@ export const StructureManagerModal: React.FC<StructureManagerModalProps> = ({ st
                                     value={newComponentInput}
                                     onChange={(e) => setNewComponentInput(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && handleAddComponent()}
-                                    placeholder="Название компонента (например, Context)"
+                                    placeholder="Название компонента (например, Контекст)"
                                     className="flex-1 bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none"
                                 />
                                 <button 
@@ -261,24 +261,3 @@ export const StructureManagerModal: React.FC<StructureManagerModalProps> = ({ st
     </div>
   );
 };
-
-function LayersIcon({ size, className }: { size: number, className?: string }) {
-    return (
-        <svg 
-            xmlns="http://www.w3.org/2000/svg" 
-            width={size} 
-            height={size} 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2" 
-            strokeLinecap="round" 
-            strokeLinejoin="round" 
-            className={className}
-        >
-            <polygon points="12 2 2 7 12 12 22 7 12 2" />
-            <polyline points="2 17 12 22 22 17" />
-            <polyline points="2 12 12 17 22 12" />
-        </svg>
-    );
-}
