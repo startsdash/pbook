@@ -111,25 +111,25 @@ export const StructureManagerModal: React.FC<StructureManagerModalProps> = ({ st
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center sm:p-6">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose}></div>
       
-      <div className="relative w-full max-w-4xl bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 flex flex-col h-[80vh] overflow-hidden">
+      <div className="relative w-full max-w-4xl bg-slate-900 sm:rounded-2xl shadow-2xl border border-slate-800 flex flex-col h-full sm:h-[85vh] overflow-hidden">
         
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900 shrink-0">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Layers size={24} className="text-indigo-500" />
-            Структуры промпта
+            <span className="truncate">Структуры</span>
           </h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors p-1">
             <X size={24} />
           </button>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
-            {/* Sidebar List */}
-            <div className="w-1/3 border-r border-slate-800 bg-slate-950 flex flex-col">
-                <div className="p-4">
+        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+            {/* Sidebar List (Top on mobile) */}
+            <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-slate-800 bg-slate-950 flex flex-col max-h-[35vh] md:max-h-full">
+                <div className="p-4 shrink-0">
                     <button 
                         onClick={handleCreateNew}
                         className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors"
@@ -144,14 +144,14 @@ export const StructureManagerModal: React.FC<StructureManagerModalProps> = ({ st
                             onClick={() => handleSelectStructure(struct)}
                             className={`p-3 rounded-lg cursor-pointer flex justify-between group ${selectedStructureId === struct.id ? 'bg-slate-800 border border-indigo-500/50' : 'hover:bg-slate-900 border border-transparent'}`}
                         >
-                            <div>
-                                <div className="text-sm font-medium text-slate-200">{struct.title}</div>
+                            <div className="min-w-0">
+                                <div className="text-sm font-medium text-slate-200 truncate">{struct.title}</div>
                                 <div className="text-xs text-slate-500 truncate">{struct.defaultComponents.length} компонентов</div>
                             </div>
                             {selectedStructureId === struct.id && (
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); handleDeleteStructure(struct.id); }}
-                                    className="text-slate-600 hover:text-red-400"
+                                    className="text-slate-600 hover:text-red-400 p-1"
                                 >
                                     <Trash2 size={14} />
                                 </button>
@@ -162,9 +162,9 @@ export const StructureManagerModal: React.FC<StructureManagerModalProps> = ({ st
             </div>
 
             {/* Edit Area */}
-            <div className="w-2/3 bg-slate-900 flex flex-col">
+            <div className="w-full md:w-2/3 bg-slate-900 flex flex-col flex-1 overflow-hidden">
                 {isEditing ? (
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
                         <div className="space-y-4">
                             <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider border-b border-slate-800 pb-2">Свойства</h3>
                             <div>
@@ -187,9 +187,9 @@ export const StructureManagerModal: React.FC<StructureManagerModalProps> = ({ st
                             </div>
                         </div>
 
-                        <div className="space-y-4">
+                        <div className="space-y-4 pb-16 md:pb-0">
                             <div className="flex justify-between items-end border-b border-slate-800 pb-2">
-                                <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider">Компоненты промпта</h3>
+                                <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider">Компоненты</h3>
                             </div>
                             
                             {/* Add Component Input */}
@@ -199,12 +199,12 @@ export const StructureManagerModal: React.FC<StructureManagerModalProps> = ({ st
                                     value={newComponentInput}
                                     onChange={(e) => setNewComponentInput(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && handleAddComponent()}
-                                    placeholder="Название компонента (например, Контекст)"
-                                    className="flex-1 bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none"
+                                    placeholder="Название (например, Контекст)"
+                                    className="flex-1 bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none w-full min-w-0"
                                 />
                                 <button 
                                     onClick={handleAddComponent}
-                                    className="bg-slate-800 hover:bg-indigo-600 text-white p-2 rounded transition-colors"
+                                    className="bg-slate-800 hover:bg-indigo-600 text-white p-2 rounded transition-colors shrink-0"
                                 >
                                     <Plus size={18} />
                                 </button>
@@ -221,11 +221,11 @@ export const StructureManagerModal: React.FC<StructureManagerModalProps> = ({ st
                                         onDrop={(e) => handleDrop(e, index)}
                                         className="flex items-center gap-3 bg-slate-950 border border-slate-800 p-3 rounded group cursor-move hover:border-slate-600"
                                     >
-                                        <GripVertical size={16} className="text-slate-600 group-hover:text-slate-400" />
-                                        <span className="text-sm text-slate-200 flex-1">{comp}</span>
+                                        <GripVertical size={16} className="text-slate-600 group-hover:text-slate-400 shrink-0" />
+                                        <span className="text-sm text-slate-200 flex-1 truncate">{comp}</span>
                                         <button 
                                             onClick={() => handleRemoveComponent(index)}
-                                            className="text-slate-600 hover:text-red-400"
+                                            className="text-slate-600 hover:text-red-400 p-1 shrink-0"
                                         >
                                             <Trash2 size={16} />
                                         </button>
@@ -240,18 +240,19 @@ export const StructureManagerModal: React.FC<StructureManagerModalProps> = ({ st
                         </div>
                     </div>
                 ) : (
-                    <div className="flex-1 flex items-center justify-center text-slate-500">
-                        Выберите структуру для редактирования или создайте новую.
+                    <div className="flex-1 flex flex-col items-center justify-center text-slate-500 p-4 text-center">
+                        <Layers size={48} className="mb-2 opacity-20" />
+                        <p className="text-sm">Выберите структуру для редактирования или создайте новую.</p>
                     </div>
                 )}
 
                 {isEditing && (
-                    <div className="p-4 border-t border-slate-800 bg-slate-900 flex justify-end">
+                    <div className="p-4 border-t border-slate-800 bg-slate-900 flex justify-end shrink-0 z-10 sticky bottom-0">
                         <button 
                             onClick={handleSave}
-                            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg shadow-lg shadow-indigo-500/20"
+                            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg shadow-lg shadow-indigo-500/20 w-full md:w-auto justify-center"
                         >
-                            <Save size={18} /> Сохранить структуру
+                            <Save size={18} /> Сохранить
                         </button>
                     </div>
                 )}

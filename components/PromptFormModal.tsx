@@ -154,35 +154,41 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
   const copyToClipboard = (text: string) => navigator.clipboard.writeText(text);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center sm:p-6">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose}></div>
       
-      <div className="relative w-full max-w-5xl bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 flex flex-col max-h-[95vh] overflow-hidden">
+      <div className="relative w-full max-w-6xl bg-slate-900 sm:rounded-2xl shadow-2xl border border-slate-800 flex flex-col h-full sm:h-auto sm:max-h-[95vh] overflow-hidden">
         
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-          <h2 className="text-xl font-bold text-white">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/50 gap-4 sm:gap-0 shrink-0">
+          <h2 className="text-xl font-bold text-white order-1">
             {initialData ? 'Редактировать промпт' : 'Новый промпт'}
           </h2>
-          <div className="flex gap-2">
+          
+          <div className="flex items-center gap-2 order-2 sm:order-2 self-end sm:self-auto">
+             {/* Mobile Close Button (absolute top right) */}
+             <button onClick={onClose} className="sm:hidden absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
+                <X size={24} />
+            </button>
+
             <button 
                 type="button"
                 onClick={handleGeneratePrompt}
                 disabled={isGeneratingSystem || isGeneratingUser}
-                className="px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-600/50 text-sm font-medium flex items-center gap-2 hover:bg-indigo-600/30 transition-colors"
+                className="px-3 py-2 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-600/50 text-xs sm:text-sm font-medium flex items-center gap-2 hover:bg-indigo-600/30 transition-colors"
             >
                 <Sparkles size={16} />
-                {isGeneratingSystem || isGeneratingUser ? 'Формирование...' : 'Сформировать промпт'}
+                {isGeneratingSystem || isGeneratingUser ? '...' : 'AI Сборка'}
             </button>
-            <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+            <button onClick={onClose} className="hidden sm:block text-slate-400 hover:text-white transition-colors">
                 <X size={24} />
             </button>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
             
             {/* Left Column: Result & Inputs */}
-            <div className="w-full lg:w-1/2 p-6 overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-800 space-y-6">
+            <div className="w-full lg:w-1/2 p-4 sm:p-6 overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-800 space-y-6 scrollbar-thin scrollbar-thumb-slate-800 pb-20 lg:pb-6">
                 
                 {/* Meta Fields */}
                 <div className="space-y-4">
@@ -195,13 +201,13 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
                         placeholder="Название промпта"
                     />
                     
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Категория</label>
                              <select
                                 value={formData.category}
                                 onChange={e => setFormData({...formData, category: e.target.value})}
-                                className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none"
+                                className="w-full bg-slate-950 border border-slate-700 rounded p-3 sm:p-2 text-sm text-white focus:border-indigo-500 outline-none"
                             >
                                 {categories.filter(c => c !== 'Все').map(c => (
                                     <option key={c} value={c}>{c}</option>
@@ -214,14 +220,14 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
                                 <button
                                     type="button"
                                     onClick={() => setFormData({...formData, verificationStatus: 'ON_REVIEW'})}
-                                    className={`flex-1 flex items-center justify-center gap-1 text-xs py-1 rounded ${formData.verificationStatus === 'ON_REVIEW' ? 'bg-amber-900/40 text-amber-300 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                                    className={`flex-1 flex items-center justify-center gap-1 text-xs py-2 sm:py-1 rounded ${formData.verificationStatus === 'ON_REVIEW' ? 'bg-amber-900/40 text-amber-300 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
                                 >
                                     <Clock size={12} /> На проверке
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setFormData({...formData, verificationStatus: 'VERIFIED'})}
-                                    className={`flex-1 flex items-center justify-center gap-1 text-xs py-1 rounded ${formData.verificationStatus === 'VERIFIED' ? 'bg-emerald-900/40 text-emerald-300 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                                    className={`flex-1 flex items-center justify-center gap-1 text-xs py-2 sm:py-1 rounded ${formData.verificationStatus === 'VERIFIED' ? 'bg-emerald-900/40 text-emerald-300 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
                                 >
                                     <CheckCircle2 size={12} /> Проверено
                                 </button>
@@ -238,18 +244,17 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
 
                     <div>
                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Метки</label>
-                         <input type="text" value={tagInput} onChange={e => setTagInput(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none mb-2" placeholder="SEO, Code, Marketing..." />
+                         <input type="text" value={tagInput} onChange={e => setTagInput(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded p-3 sm:p-2 text-sm text-white focus:border-indigo-500 outline-none mb-2" placeholder="SEO, Code, Marketing..." />
                          {availableTags.length > 0 && (
-                             <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                             <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pt-1">
                                  {availableTags.map(t => {
-                                     // Helper to check if tag is already present in the input
                                      const isSelected = tagInput.split(',').map(tag => tag.trim().toLowerCase()).includes(t.toLowerCase());
                                      return (
                                         <button 
                                             type="button" 
                                             key={t} 
                                             onClick={() => addTag(t)} 
-                                            className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                                            className={`text-xs px-2 py-1.5 rounded border transition-colors ${
                                                 isSelected 
                                                     ? 'bg-indigo-600/20 text-indigo-300 border-indigo-600/40 cursor-default opacity-60' 
                                                     : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700 hover:text-white'
@@ -302,13 +307,13 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
             </div>
 
             {/* Right Column: Components Builder */}
-            <div className="w-full lg:w-1/2 p-6 overflow-y-auto bg-slate-950">
-                <div className="flex items-center justify-between mb-4">
+            <div className="w-full lg:w-1/2 p-4 sm:p-6 overflow-y-auto bg-slate-950 border-t lg:border-t-0 border-slate-800 pb-20 lg:pb-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
                     <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider">Конструктор</h3>
                     <select 
                         value={selectedStructureId} 
                         onChange={(e) => handleStructureChange(e.target.value)}
-                        className="bg-slate-900 border border-slate-700 rounded text-xs text-slate-300 px-2 py-1 focus:border-indigo-500 outline-none"
+                        className="bg-slate-900 border border-slate-700 rounded text-xs text-slate-300 px-2 py-2 focus:border-indigo-500 outline-none w-full sm:w-auto"
                     >
                         <option value="">Шаблон структуры...</option>
                         {structures.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
@@ -326,7 +331,7 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
                             className="bg-slate-900 border border-slate-800 rounded-lg p-3 group hover:border-indigo-500/30 transition-all"
                         >
                             <div className="flex items-center gap-2 mb-2">
-                                <GripVertical size={16} className="text-slate-600 cursor-move" />
+                                <GripVertical size={16} className="text-slate-600 cursor-move shrink-0" />
                                 <input 
                                     type="text" 
                                     value={comp.label}
@@ -337,7 +342,7 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
                                 <select
                                     value={comp.target}
                                     onChange={(e) => handleComponentChange(comp.id, 'target', e.target.value)}
-                                    className={`text-[10px] font-bold uppercase px-1 py-0.5 rounded outline-none border-none cursor-pointer ${comp.target === 'SYSTEM' ? 'bg-purple-900/30 text-purple-400' : 'bg-blue-900/30 text-blue-400'}`}
+                                    className={`text-[10px] font-bold uppercase px-1 py-0.5 rounded outline-none border-none cursor-pointer shrink-0 ${comp.target === 'SYSTEM' ? 'bg-purple-900/30 text-purple-400' : 'bg-blue-900/30 text-blue-400'}`}
                                 >
                                     <option value="SYSTEM">SYSTEM</option>
                                     <option value="USER">USER</option>
@@ -346,14 +351,14 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
                                     type="button"
                                     onClick={() => appendToContent(comp.target, comp.value)}
                                     title={`Добавить в ${comp.target}`}
-                                    className="text-slate-500 hover:text-indigo-400 p-1"
+                                    className="text-slate-500 hover:text-indigo-400 p-1 shrink-0"
                                 >
                                     <Plus size={16} />
                                 </button>
                                 <button 
                                     type="button"
                                     onClick={() => handleRemoveComponent(comp.id)}
-                                    className="text-slate-600 hover:text-red-400 p-1"
+                                    className="text-slate-600 hover:text-red-400 p-1 shrink-0"
                                 >
                                     <Trash2 size={14} />
                                 </button>
@@ -371,23 +376,24 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
                 <button 
                     type="button"
                     onClick={handleAddComponent}
-                    className="w-full py-2 border border-dashed border-slate-700 rounded-lg text-slate-500 hover:text-indigo-400 hover:border-indigo-500/50 transition-colors flex items-center justify-center gap-2 text-sm"
+                    className="w-full py-3 border border-dashed border-slate-700 rounded-lg text-slate-500 hover:text-indigo-400 hover:border-indigo-500/50 transition-colors flex items-center justify-center gap-2 text-sm"
                 >
                     <Plus size={16} /> Добавить компонент вручную
                 </button>
             </div>
             
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-slate-900 border-t border-slate-800 flex justify-end gap-3 z-10">
+            {/* Fixed Footer for Save/Cancel */}
+            <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-slate-900 border-t border-slate-800 flex justify-end gap-3 z-20 shadow-lg">
                  <button
                     type="button"
                     onClick={onClose}
-                    className="px-4 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+                    className="px-4 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-sm sm:text-base"
                  >
                     Отмена
                  </button>
                  <button
                     type="submit"
-                    className="px-6 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-lg shadow-indigo-500/20 flex items-center gap-2"
+                    className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-lg shadow-indigo-500/20 flex items-center gap-2 text-sm sm:text-base"
                  >
                     <Save size={18} />
                     Сохранить

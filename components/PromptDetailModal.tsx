@@ -34,19 +34,26 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center sm:p-6">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose}></div>
       
-      <div className="relative w-full max-w-5xl bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 flex flex-col max-h-[90vh] overflow-hidden">
+      <div className="relative w-full max-w-5xl bg-slate-900 sm:rounded-2xl shadow-2xl border border-slate-800 flex flex-col h-full sm:h-auto sm:max-h-[90vh] overflow-hidden">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-            <div>
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                    {prompt.title}
-                </h2>
-                <div className="mt-1 flex items-center gap-2">
-                    <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/50 gap-4 sm:gap-0 shrink-0">
+            <div className="flex-1 min-w-0 mr-4">
+                <div className="flex items-start justify-between">
+                     <h2 className="text-lg sm:text-xl font-bold text-white leading-tight break-words">
+                        {prompt.title}
+                    </h2>
+                     {/* Mobile Close Button (top-right absolute for easy reach) */}
+                     <button onClick={onClose} className="sm:hidden text-slate-400 hover:text-white p-1 -mt-1 -mr-1">
+                        <X size={24} />
+                    </button>
+                </div>
+               
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 truncate max-w-[150px]">
                         {prompt.category}
                     </span>
                     {prompt.verificationStatus === 'VERIFIED' ? (
@@ -60,13 +67,14 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
                     )}
                 </div>
             </div>
-            <div className="flex items-center gap-2">
+
+            <div className="flex items-center justify-between sm:justify-end gap-2 overflow-x-auto pb-1 sm:pb-0">
                 
                 {/* Export Menu */}
-                <div className="relative mr-2">
+                <div className="relative">
                     <button 
                         onClick={() => setShowExportMenu(!showExportMenu)}
-                        className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
+                        className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg border border-slate-700 transition-colors whitespace-nowrap"
                     >
                         <Download size={14} />
                         Экспорт
@@ -76,7 +84,7 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
                     {showExportMenu && (
                         <>
                             <div className="fixed inset-0 z-10" onClick={() => setShowExportMenu(false)}></div>
-                            <div className="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-20 overflow-hidden">
+                            <div className="absolute top-full right-0 sm:right-0 left-0 sm:left-auto mt-2 w-48 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-20 overflow-hidden">
                                 <button 
                                     onClick={() => { exportPromptToMarkdown(prompt); setShowExportMenu(false); }}
                                     className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-left"
@@ -96,10 +104,10 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
                     )}
                 </div>
 
-                <div className="h-6 w-px bg-slate-800 mx-1"></div>
+                <div className="h-6 w-px bg-slate-800 mx-1 hidden sm:block"></div>
 
                 {!showDeleteConfirm ? (
-                    <>
+                    <div className="flex items-center">
                         <button 
                             onClick={() => onEdit(prompt)}
                             className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition-colors mr-1"
@@ -109,23 +117,23 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
                         </button>
                         <button 
                             onClick={() => setShowDeleteConfirm(true)}
-                            className="text-slate-400 hover:text-red-400 p-2 rounded-full hover:bg-slate-800 transition-colors mr-2"
+                            className="text-slate-400 hover:text-red-400 p-2 rounded-full hover:bg-slate-800 transition-colors"
                             title="Удалить"
                         >
                             <Trash2 size={20} />
                         </button>
-                    </>
+                    </div>
                 ) : (
-                    <div className="flex items-center gap-2 mr-4 bg-red-900/20 border border-red-900/50 rounded-lg px-2 py-1">
-                        <span className="text-xs text-red-300">Удалить?</span>
+                    <div className="flex items-center gap-2 bg-red-900/20 border border-red-900/50 rounded-lg px-2 py-1">
+                        <span className="text-xs text-red-300 whitespace-nowrap">Удалить?</span>
                         <button onClick={handleDelete} className="text-red-400 hover:text-red-200 text-xs font-bold px-2 py-1 hover:bg-red-900/50 rounded">Да</button>
                         <button onClick={() => setShowDeleteConfirm(false)} className="text-slate-400 hover:text-white text-xs px-2 py-1 hover:bg-slate-800 rounded">Нет</button>
                     </div>
                 )}
                 
-                <div className="h-6 w-px bg-slate-800 mx-1"></div>
+                <div className="h-6 w-px bg-slate-800 mx-1 hidden sm:block"></div>
                 
-                <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-800 transition-colors">
+                <button onClick={onClose} className="hidden sm:block text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-800 transition-colors">
                     <X size={24} />
                 </button>
             </div>
@@ -134,7 +142,7 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
         <div className="flex flex-col lg:flex-row h-full overflow-hidden bg-slate-950">
             
             {/* Main Content: System & User Prompts */}
-            <div className="w-full lg:w-2/3 p-6 overflow-y-auto space-y-6">
+            <div className="w-full lg:w-2/3 p-4 sm:p-6 overflow-y-auto space-y-6 scrollbar-thin scrollbar-thumb-slate-800">
                 
                 {/* System Prompt */}
                 <div className="space-y-2">
@@ -151,13 +159,13 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
                             {copiedSystem ? 'Скопировано' : 'Копировать'}
                         </button>
                     </div>
-                    <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 font-mono text-sm text-slate-300 whitespace-pre-wrap relative group">
+                    <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 font-mono text-sm text-slate-300 whitespace-pre-wrap break-words relative group">
                         {prompt.systemContent || <span className="text-slate-600 italic">System prompt отсутствует</span>}
                     </div>
                 </div>
 
                 {/* User Prompt */}
-                <div className="space-y-2">
+                <div className="space-y-2 pb-6">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 text-indigo-400 text-sm font-bold uppercase tracking-wider">
                             <User size={16} />
@@ -171,14 +179,14 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
                             {copiedUser ? 'Скопировано' : 'Копировать'}
                         </button>
                     </div>
-                    <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 font-mono text-sm text-slate-300 whitespace-pre-wrap">
+                    <div className="bg-slate-900 rounded-lg border border-slate-800 p-4 font-mono text-sm text-slate-300 whitespace-pre-wrap break-words">
                         {prompt.userContent || <span className="text-slate-600 italic">User prompt отсутствует</span>}
                     </div>
                 </div>
             </div>
 
             {/* Sidebar: Info & Components */}
-            <div className="w-full lg:w-1/3 p-6 border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-900 overflow-y-auto">
+            <div className="w-full lg:w-1/3 p-4 sm:p-6 border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-900 overflow-y-auto shrink-0 pb-10">
                  <div className="mb-6">
                     <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-2">Описание</h3>
                     <p className="text-sm text-slate-300 leading-relaxed">{prompt.description}</p>
@@ -200,7 +208,7 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
                                             {comp.target}
                                         </span>
                                     </div>
-                                    <div className="text-slate-500 line-clamp-2">{comp.value}</div>
+                                    <div className="text-slate-500 line-clamp-3 break-words">{comp.value}</div>
                                 </div>
                             ))}
                         </div>

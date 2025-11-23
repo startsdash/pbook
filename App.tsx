@@ -8,7 +8,7 @@ import { PromptDetailModal } from './components/PromptDetailModal';
 import { PromptFormModal } from './components/PromptFormModal';
 import { StructureManagerModal } from './components/StructureManagerModal';
 import { SettingsModal } from './components/SettingsModal';
-import { Search, BookOpen, Plus, Layers, Download, Upload, Database, Settings } from 'lucide-react';
+import { Search, BookOpen, Plus, Layers, Download, Upload, Database, Settings, Menu, X } from 'lucide-react';
 import { exportPromptsToExcel, parseExcelDatabase } from './utils/fileExport';
 
 export default function App() {
@@ -28,6 +28,9 @@ export default function App() {
   const [isStructureManagerOpen, setIsStructureManagerOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
+  
+  // UI State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // File Input Ref
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -82,10 +85,17 @@ export default function App() {
 
   const handleExportDatabase = () => {
       exportPromptsToExcel(prompts, categories, availableTags);
+      setIsMobileMenuOpen(false);
   };
 
   const handleImportClick = () => {
       fileInputRef.current?.click();
+      setIsMobileMenuOpen(false);
+  };
+
+  const handleCategorySelect = (category: string) => {
+      setSelectedCategory(category);
+      setIsMobileMenuOpen(false);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -108,10 +118,7 @@ export default function App() {
                   alert(`База успешно заменена. Загружено ${importedPrompts.length} промптов.`);
               } else {
                   // Option 2: Upsert / Merge
-                  // Create a map of current prompts by ID
                   const promptMap = new Map(prompts.map(p => [p.id, p]));
-                  
-                  // Update existing or add new prompts from import
                   importedPrompts.forEach(p => {
                       promptMap.set(p.id, p);
                   });
@@ -119,13 +126,10 @@ export default function App() {
                   const mergedPrompts = Array.from(promptMap.values());
                   setPrompts(mergedPrompts);
                   
-                  // Merge Categories (Set ensures uniqueness)
                   const mergedCategoriesSet = new Set([...categories, ...importedCategories]);
-                  // Ensure 'Все' is preserved as the first item
                   const mergedCategories = ['Все', ...Array.from(mergedCategoriesSet).filter(c => c !== 'Все')];
                   setCategories(mergedCategories);
                   
-                  // Merge Tags
                   const mergedTags = Array.from(new Set([...availableTags, ...importedTags]));
                   setAvailableTags(mergedTags);
 
@@ -138,7 +142,6 @@ export default function App() {
           console.error("Import failed", error);
           alert("Ошибка при чтении файла. Убедитесь, что это корректный Excel файл Prompt Book.");
       } finally {
-          // Reset input to allow selecting the same file again if needed
           if (fileInputRef.current) fileInputRef.current.value = '';
       }
   };
@@ -154,8 +157,19 @@ export default function App() {
         className="hidden"
       />
 
-      {/* Sidebar */}
-      <aside className="w-64 hidden md:flex flex-col border-r border-slate-800 bg-slate-950 flex-shrink-0">
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+            className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm"
+            onClick={() => setIsMobileMenuOpen(false)}
+        ></div>
+      )}
+
+      {/* Sidebar (Responsive) */}
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-72 bg-slate-950 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out md:relative md:translate-x-0
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
         <div className="p-6 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
                 <div className="bg-indigo-600 p-1.5 rounded-lg">
@@ -163,52 +177,61 @@ export default function App() {
                 </div>
                 <h1 className="font-bold text-xl tracking-tight text-white">Prompt Book</h1>
             </div>
-            <button 
-                onClick={() => setIsSettingsOpen(true)}
-                className="text-slate-500 hover:text-white transition-colors p-1"
-                title="Настройки"
-            >
-                <Settings size={18} />
-            </button>
+            <div className="flex items-center gap-1">
+                <button 
+                    onClick={() => { setIsSettingsOpen(true); setIsMobileMenuOpen(false); }}
+                    className="text-slate-500 hover:text-white transition-colors p-2"
+                    title="Настройки"
+                >
+                    <Settings size={20} />
+                </button>
+                {/* Close button only visible on mobile */}
+                <button 
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="md:hidden text-slate-500 hover:text-white transition-colors p-2"
+                >
+                    <X size={24} />
+                </button>
+            </div>
         </div>
         
         <div className="p-4 pb-0 space-y-2">
             <button 
-                onClick={handleCreatePrompt}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-lg shadow-indigo-900/20"
+                onClick={() => { handleCreatePrompt(); setIsMobileMenuOpen(false); }}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-lg shadow-indigo-900/20 active:scale-95 duration-100"
             >
                 <Plus size={18} />
                 Создать промпт
             </button>
             <button 
-                onClick={() => setIsStructureManagerOpen(true)}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
+                onClick={() => { setIsStructureManagerOpen(true); setIsMobileMenuOpen(false); }}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors active:scale-95 duration-100"
             >
                 <Layers size={18} />
                 Структуры
             </button>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-slate-800">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 px-4">Библиотека</div>
-          <CategoryFilter categories={categories} selectedCategory={selectedCategory} onSelect={setSelectedCategory} />
+          <CategoryFilter categories={categories} selectedCategory={selectedCategory} onSelect={handleCategorySelect} />
         </div>
 
-        <div className="p-4 border-t border-slate-800 space-y-2">
+        <div className="p-4 border-t border-slate-800 space-y-2 pb-8 md:pb-4">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">База данных</div>
             <div className="grid grid-cols-2 gap-2">
                 <button 
                     onClick={handleExportDatabase}
-                    className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-2 rounded-lg transition-all text-xs text-slate-400 hover:text-white"
+                    className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-xs text-slate-400 hover:text-white active:bg-slate-800"
                 >
-                    <Download size={16} className="text-emerald-500" />
+                    <Download size={18} className="text-emerald-500 mb-1" />
                     Экспорт
                 </button>
                 <button 
                     onClick={handleImportClick}
-                    className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-2 rounded-lg transition-all text-xs text-slate-400 hover:text-white"
+                    className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-xs text-slate-400 hover:text-white active:bg-slate-800"
                 >
-                    <Upload size={16} className="text-blue-500" />
+                    <Upload size={18} className="text-blue-500 mb-1" />
                     Импорт
                 </button>
             </div>
@@ -216,26 +239,31 @@ export default function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+      <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full">
         
         {/* Mobile Header */}
-        <div className="md:hidden p-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-                 <BookOpen size={20} className="text-indigo-500" />
-                 <h1 className="font-bold text-lg">Prompt Book</h1>
+        <div className="md:hidden p-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between sticky top-0 z-20">
+            <div className="flex items-center gap-3">
+                 <button 
+                    onClick={() => setIsMobileMenuOpen(true)}
+                    className="text-slate-300 hover:text-white p-1"
+                 >
+                    <Menu size={24} />
+                 </button>
+                 <div className="flex items-center gap-2">
+                    <BookOpen size={20} className="text-indigo-500" />
+                    <h1 className="font-bold text-lg">Prompt Book</h1>
+                 </div>
             </div>
             <div className="flex gap-2">
-                <button onClick={() => setIsSettingsOpen(true)} className="text-slate-400 p-2">
+                <button onClick={() => setIsSettingsOpen(true)} className="text-slate-400 p-2 rounded-full hover:bg-slate-800">
                     <Settings size={22} />
-                </button>
-                <button onClick={handleCreatePrompt} className="text-indigo-400 p-2">
-                    <Plus size={24} />
                 </button>
             </div>
         </div>
 
-        {/* Top Bar */}
-        <div className="h-16 border-b border-slate-800 bg-slate-950/50 backdrop-blur-sm flex items-center px-6 sticky top-0 z-10">
+        {/* Top Bar (Desktop & Mobile) */}
+        <div className="h-16 border-b border-slate-800 bg-slate-950/50 backdrop-blur-sm flex items-center px-4 md:px-6 sticky top-16 md:top-0 z-10">
           <div className="relative w-full max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
             <input 
@@ -254,16 +282,16 @@ export default function App() {
         </div>
 
         {/* Prompts Grid */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth">
           <div className="max-w-7xl mx-auto">
              
-             <div className="mb-6 flex items-baseline gap-2">
-                <h2 className="text-2xl font-bold text-white">{selectedCategory}</h2>
+             <div className="mb-6 flex flex-wrap items-baseline gap-2">
+                <h2 className="text-xl md:text-2xl font-bold text-white">{selectedCategory}</h2>
                 <span className="text-slate-500 text-sm">({filteredPrompts.length})</span>
              </div>
 
              {filteredPrompts.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-10">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 pb-20 md:pb-10">
                     {filteredPrompts.map(prompt => (
                     <PromptCard 
                         key={prompt.id} 
