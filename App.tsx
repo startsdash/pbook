@@ -8,8 +8,10 @@ import { PromptDetailModal } from './components/PromptDetailModal';
 import { PromptFormModal } from './components/PromptFormModal';
 import { StructureManagerModal } from './components/StructureManagerModal';
 import { SettingsModal } from './components/SettingsModal';
-import { Search, BookOpen, Plus, Layers, Download, Upload, Database, Settings, Menu, X } from 'lucide-react';
+import { CloudSyncModal } from './components/CloudSyncModal';
+import { Search, BookOpen, Plus, Layers, Download, Upload, Settings, Menu, X, Cloud } from 'lucide-react';
 import { exportPromptsToExcel, parseExcelDatabase } from './utils/fileExport';
+import { BackupData } from './services/googleDriveService';
 
 export default function App() {
   const [prompts, setPrompts] = useState<Prompt[]>(INITIAL_PROMPTS);
@@ -27,6 +29,7 @@ export default function App() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isStructureManagerOpen, setIsStructureManagerOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isCloudSyncOpen, setIsCloudSyncOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
   
   // UI State
@@ -146,6 +149,14 @@ export default function App() {
       }
   };
 
+  const handleCloudRestore = (data: BackupData) => {
+      if (window.confirm(`Обнаружена резервная копия от ${new Date(data.lastUpdated).toLocaleString()}. Восстановить?\nЭто заменит текущую базу.`)) {
+          setPrompts(data.prompts || []);
+          setCategories(data.categories || INITIAL_CATEGORIES);
+          setAvailableTags(data.tags || INITIAL_TAGS);
+      }
+  };
+
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden">
       
@@ -217,8 +228,18 @@ export default function App() {
           <CategoryFilter categories={categories} selectedCategory={selectedCategory} onSelect={handleCategorySelect} />
         </div>
 
-        <div className="p-4 border-t border-slate-800 space-y-2 pb-8 md:pb-4">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">База данных</div>
+        <div className="p-4 border-t border-slate-800 space-y-3 pb-8 md:pb-4">
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">База данных</div>
+            
+            {/* Google Drive Sync Button */}
+            <button
+                onClick={() => { setIsCloudSyncOpen(true); setIsMobileMenuOpen(false); }}
+                className="w-full flex items-center justify-center gap-2 bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-sm text-slate-300 hover:text-white group"
+            >
+                <Cloud size={18} className="text-blue-500 group-hover:text-blue-400" />
+                Google Drive
+            </button>
+
             <div className="grid grid-cols-2 gap-2">
                 <button 
                     onClick={handleExportDatabase}
@@ -256,6 +277,9 @@ export default function App() {
                  </div>
             </div>
             <div className="flex gap-2">
+                <button onClick={() => setIsCloudSyncOpen(true)} className="text-slate-400 p-2 rounded-full hover:bg-slate-800">
+                    <Cloud size={22} />
+                </button>
                 <button onClick={() => setIsSettingsOpen(true)} className="text-slate-400 p-2 rounded-full hover:bg-slate-800">
                     <Settings size={22} />
                 </button>
@@ -346,6 +370,16 @@ export default function App() {
             tags={availableTags}
             setTags={setAvailableTags}
             onClose={() => setIsSettingsOpen(false)}
+          />
+      )}
+
+      {isCloudSyncOpen && (
+          <CloudSyncModal
+            prompts={prompts}
+            categories={categories}
+            tags={availableTags}
+            onRestore={handleCloudRestore}
+            onClose={() => setIsCloudSyncOpen(false)}
           />
       )}
     </div>
