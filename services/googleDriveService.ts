@@ -1,4 +1,3 @@
-
 import { Prompt } from '../types';
 
 // TypeScript declarations for Google API globals
@@ -11,14 +10,47 @@ declare global {
 declare var gapi: any;
 declare var google: any;
 
-// NOTE: In a real deployment, these should be environment variables.
-// You need to create a project in Google Cloud Console, enable Drive API,
-// and create an OAuth 2.0 Client ID for a Web Application.
-// Since we cannot set env vars dynamically here, we look for them in process.env
-// or warn the user.
+// Helper to safely get env vars from various sources (Vite, CRA, Next.js, plain process.env)
+const getEnvVar = (baseKey: string): string => {
+    let val = '';
+    
+    // 1. Try import.meta.env (Vite standard)
+    try {
+        // @ts-ignore
+        if (typeof import.meta !== 'undefined' && import.meta.env) {
+            // @ts-ignore
+            val = import.meta.env[baseKey] || 
+                  // @ts-ignore
+                  import.meta.env[`VITE_${baseKey}`] ||
+                  // @ts-ignore
+                  import.meta.env[`NEXT_PUBLIC_${baseKey}`] || 
+                  // @ts-ignore
+                  import.meta.env[`REACT_APP_${baseKey}`];
+        }
+    } catch (e) {
+        // ignore
+    }
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || ''; 
-const API_KEY = process.env.GOOGLE_API_KEY || ''; 
+    if (val) return val;
+
+    // 2. Try process.env (Webpack/CRA/Next/Polymorph)
+    try {
+        if (typeof process !== 'undefined' && process.env) {
+            val = process.env[baseKey] || 
+                  process.env[`VITE_${baseKey}`] ||
+                  process.env[`NEXT_PUBLIC_${baseKey}`] || 
+                  process.env[`REACT_APP_${baseKey}`];
+        }
+    } catch (e) {
+        // ignore
+    }
+    
+    return val || '';
+};
+
+const CLIENT_ID = getEnvVar('GOOGLE_CLIENT_ID');
+const API_KEY = getEnvVar('GOOGLE_API_KEY');
+
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 

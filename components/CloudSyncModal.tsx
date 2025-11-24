@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { X, Cloud, Upload, Download, LogIn, LogOut, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { 
@@ -128,9 +127,16 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
                     <div className="flex flex-col items-center text-center">
                         <AlertCircle size={48} className="text-red-500 mb-4" />
                         <h2 className="text-xl font-bold text-white mb-2">Настройка не найдена</h2>
-                        <p className="text-slate-400 text-sm mb-4">
-                            Для работы с Google Drive необходимо настроить <code>GOOGLE_CLIENT_ID</code> и <code>GOOGLE_API_KEY</code> в переменных окружения.
-                        </p>
+                        <div className="text-slate-400 text-sm mb-4 space-y-3">
+                            <p>
+                                Для работы с Google Drive необходимо настроить <code>GOOGLE_CLIENT_ID</code> и <code>GOOGLE_API_KEY</code> в переменных окружения.
+                            </p>
+                            <p className="text-xs bg-slate-950 p-3 rounded border border-slate-800 text-slate-500">
+                                <strong>Совет для Vercel / Vite:</strong><br/>
+                                Если переменные добавлены, но не видны, попробуйте добавить префикс <code>VITE_</code> к названиям переменных в настройках проекта.<br/>
+                                Например: <code>VITE_GOOGLE_CLIENT_ID</code>
+                            </p>
+                        </div>
                         <button onClick={onClose} className="bg-slate-800 text-white px-4 py-2 rounded hover:bg-slate-700">Закрыть</button>
                     </div>
                 </div>
