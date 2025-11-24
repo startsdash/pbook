@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Prompt, Structure } from './types';
 import { INITIAL_PROMPTS, INITIAL_STRUCTURES, INITIAL_CATEGORIES, INITIAL_TAGS } from './constants';
 import { CategoryFilter } from './components/CategoryFilter';
@@ -11,7 +11,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { Search, BookOpen, Plus, Layers, Download, Upload, Settings, Menu, X, Cloud } from 'lucide-react';
 import { exportPromptsToExcel, parseExcelDatabase } from './utils/fileExport';
-import { BackupData } from './services/googleDriveService';
+import { BackupData, initGoogleDrivePromise, checkForRemoteBackup, downloadBackup, isSignedIn } from './services/googleDriveService';
 
 export default function App() {
   const [prompts, setPrompts] = useState<Prompt[]>(INITIAL_PROMPTS);
@@ -34,9 +34,66 @@ export default function App() {
   
   // UI State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isDriveConnected, setDriveConnected] = useState(false);
   
   // File Input Ref
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Toast Notification State
+  const [toastMessage, setToastMessage] = useState<{title: string, action?: () => void, actionLabel?: string} | null>(null);
+
+  // Auto-init Google Drive
+  useEffect(() => {
+      let mounted = true;
+
+      const initDrive = async () => {
+          try {
+              await initGoogleDrivePromise();
+              
+              if (!mounted) return;
+
+              // Safe check for connection status
+              const connected = isSignedIn();
+              setDriveConnected(connected);
+
+              if (connected) {
+                  // Auto-check for updates
+                  const result = await checkForRemoteBackup();
+                  
+                  if (!mounted) return;
+
+                  if (result && result.exists && result.modifiedTime) {
+                      const localLastSync = localStorage.getItem('last_cloud_sync');
+                      const cloudTime = new Date(result.modifiedTime).getTime();
+                      const localTime = localLastSync ? new Date(localLastSync).getTime() : 0;
+
+                      // If cloud is newer by more than 1 minute
+                      if (cloudTime > localTime + 60000) {
+                          setToastMessage({
+                              title: 'Найден новый бэкап в облаке',
+                              actionLabel: 'Загрузить',
+                              action: async () => {
+                                  try {
+                                      const data = await downloadBackup();
+                                      handleCloudRestore(data, true);
+                                      setToastMessage(null);
+                                  } catch (e) {
+                                      alert('Ошибка загрузки бэкапа');
+                                  }
+                              }
+                          });
+                      }
+                  }
+              }
+          } catch (e) {
+              console.error("Auto-sync init failed", e);
+          }
+      };
+
+      initDrive();
+      
+      return () => { mounted = false; };
+  }, [isCloudSyncOpen]); // Re-check when modal closes in case user logged in
 
   // Filter prompts
   const filteredPrompts = useMemo(() => {
@@ -119,7 +176,6 @@ export default function App() {
                                      `Отмена — ОБЪЕДИНИТЬ (существующие записи обновятся, новые добавятся).`;
 
               if (window.confirm(confirmMessage)) {
-                  // Option 1: Replace Database completely
                   setPrompts(importedPrompts);
                   setCategories(importedCategories);
                   setAvailableTags(importedTags);
@@ -128,7 +184,6 @@ export default function App() {
                   }
                   alert(`База успешно заменена. Загружено ${importedPrompts.length} промптов.`);
               } else {
-                  // Option 2: Upsert / Merge Prompts
                   const promptMap = new Map(prompts.map(p => [p.id, p]));
                   importedPrompts.forEach(p => {
                       promptMap.set(p.id, p);
@@ -136,16 +191,13 @@ export default function App() {
                   const mergedPrompts = Array.from(promptMap.values());
                   setPrompts(mergedPrompts);
                   
-                  // Merge Categories
                   const mergedCategoriesSet = new Set([...categories, ...importedCategories]);
                   const mergedCategories = ['Все', ...Array.from(mergedCategoriesSet).filter(c => c !== 'Все')];
                   setCategories(mergedCategories);
                   
-                  // Merge Tags
                   const mergedTags = Array.from(new Set([...availableTags, ...importedTags]));
                   setAvailableTags(mergedTags);
 
-                  // Merge Structures
                   if (importedStructures.length > 0) {
                       const structureMap = new Map(structures.map(s => [s.id, s]));
                       importedStructures.forEach(s => {
@@ -167,12 +219,21 @@ export default function App() {
       }
   };
 
-  const handleCloudRestore = (data: BackupData) => {
-      if (window.confirm(`Обнаружена резервная копия от ${new Date(data.lastUpdated).toLocaleString()}. Восстановить?\nЭто заменит текущую базу.`)) {
-          setPrompts(data.prompts || []);
-          setCategories(data.categories || INITIAL_CATEGORIES);
-          setAvailableTags(data.tags || INITIAL_TAGS);
-          // Note: Cloud Sync structure logic should be updated if backup format supports it in future
+  const handleCloudRestore = (data: BackupData, silent = false) => {
+      const performRestore = () => {
+          if (data.prompts) setPrompts(data.prompts);
+          if (data.categories) setCategories(data.categories);
+          if (data.tags) setAvailableTags(data.tags);
+          localStorage.setItem('last_cloud_sync', new Date().toISOString());
+      };
+
+      if (silent) {
+          performRestore();
+          alert('База данных обновлена из облака.');
+      } else {
+          if (window.confirm(`Обнаружена резервная копия от ${new Date(data.lastUpdated).toLocaleString()}. Восстановить?\nЭто заменит текущую базу.`)) {
+              performRestore();
+          }
       }
   };
 
@@ -193,6 +254,30 @@ export default function App() {
             className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm"
             onClick={() => setIsMobileMenuOpen(false)}
         ></div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+          <div className="fixed bottom-6 right-6 z-[100] bg-slate-800 border border-indigo-500/50 shadow-2xl p-4 rounded-xl flex items-center gap-4 animate-in slide-in-from-bottom-5">
+              <div className="bg-indigo-500/20 p-2 rounded-full">
+                  <Cloud size={20} className="text-indigo-400" />
+              </div>
+              <div>
+                  <div className="text-sm font-semibold text-white">{toastMessage.title}</div>
+                  <div className="text-xs text-slate-400">Синхронизация Google Drive</div>
+              </div>
+              {toastMessage.action && (
+                  <button 
+                    onClick={toastMessage.action}
+                    className="ml-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                      {toastMessage.actionLabel}
+                  </button>
+              )}
+              <button onClick={() => setToastMessage(null)} className="text-slate-500 hover:text-white ml-1">
+                  <X size={16} />
+              </button>
+          </div>
       )}
 
       {/* Sidebar (Responsive) */}
@@ -253,10 +338,11 @@ export default function App() {
             {/* Google Drive Sync Button */}
             <button
                 onClick={() => { setIsCloudSyncOpen(true); setIsMobileMenuOpen(false); }}
-                className="w-full flex items-center justify-center gap-2 bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-sm text-slate-300 hover:text-white group"
+                className="w-full flex items-center justify-center gap-2 bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-sm text-slate-300 hover:text-white group relative"
             >
                 <Cloud size={18} className="text-blue-500 group-hover:text-blue-400" />
                 Google Drive
+                {isDriveConnected && <div className="absolute top-3 right-3 w-2 h-2 bg-green-500 rounded-full"></div>}
             </button>
 
             <div className="grid grid-cols-2 gap-2">
@@ -296,8 +382,9 @@ export default function App() {
                  </div>
             </div>
             <div className="flex gap-2">
-                <button onClick={() => setIsCloudSyncOpen(true)} className="text-slate-400 p-2 rounded-full hover:bg-slate-800">
+                <button onClick={() => setIsCloudSyncOpen(true)} className="text-slate-400 p-2 rounded-full hover:bg-slate-800 relative">
                     <Cloud size={22} />
+                    {isDriveConnected && <div className="absolute top-2 right-2 w-2 h-2 bg-green-500 rounded-full border border-slate-950"></div>}
                 </button>
                 <button onClick={() => setIsSettingsOpen(true)} className="text-slate-400 p-2 rounded-full hover:bg-slate-800">
                     <Settings size={22} />

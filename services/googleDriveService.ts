@@ -1,3 +1,4 @@
+
 import { Prompt } from '../types';
 
 // TypeScript declarations for Google API globals
@@ -7,54 +8,35 @@ declare global {
     google: any;
   }
 }
-declare var gapi: any;
-declare var google: any;
 
-// Helper to safely get env vars from various sources (Vite, CRA, Next.js, plain process.env)
-const getEnvVar = (baseKey: string): string => {
-    let val = '';
-    
-    // 1. Try import.meta.env (Vite standard)
+// --- Configuration & Helpers ---
+
+const getEnvVar = (key: string): string => {
     try {
-        // @ts-ignore
-        if (typeof import.meta !== 'undefined' && import.meta.env) {
-            // @ts-ignore
-            val = import.meta.env[baseKey] || 
-                  // @ts-ignore
-                  import.meta.env[`VITE_${baseKey}`] ||
-                  // @ts-ignore
-                  import.meta.env[`NEXT_PUBLIC_${baseKey}`] || 
-                  // @ts-ignore
-                  import.meta.env[`REACT_APP_${baseKey}`];
+        // Check for process.env (Node/Webpack/Vite environments)
+        if (typeof process !== 'undefined' && process.env && process.env[key]) {
+            return process.env[key] as string;
         }
     } catch (e) {
-        // ignore
+        // Ignore errors accessing process
     }
-
-    if (val) return val;
-
-    // 2. Try process.env (Webpack/CRA/Next/Polymorph)
-    try {
-        if (typeof process !== 'undefined' && process.env) {
-            val = process.env[baseKey] || 
-                  process.env[`VITE_${baseKey}`] ||
-                  process.env[`NEXT_PUBLIC_${baseKey}`] || 
-                  process.env[`REACT_APP_${baseKey}`];
-        }
-    } catch (e) {
-        // ignore
-    }
-    
-    return val || '';
+    return '';
 };
 
-const CLIENT_ID = getEnvVar('GOOGLE_CLIENT_ID');
+// You can hardcode these if environment variables fail, but be careful with secrets in frontend code.
+const CLIENT_ID = getEnvVar('GOOGLE_CLIENT_ID'); 
 const API_KEY = getEnvVar('GOOGLE_API_KEY');
 
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
-
 const BACKUP_FILENAME = 'prompt_book_backup.json';
+const TOKEN_STORAGE_KEY = 'gdrive_access_token';
+const TOKEN_EXPIRY_KEY = 'gdrive_token_expiry';
+
+let tokenClient: any;
+let isInitialized = false;
+
+// --- Interfaces ---
 
 interface DriveFile {
   id: string;
@@ -69,103 +51,182 @@ export interface BackupData {
   lastUpdated: string;
 }
 
-let tokenClient: any;
-let gapiInited = false;
-let gisInited = false;
-let accessToken: string | null = null;
+// --- Initialization ---
 
-// Helper to check if configuration is present
-export const isDriveConfigured = () => {
-    return !!CLIENT_ID && !!API_KEY;
+export const isDriveConfigured = (): boolean => {
+    return !!(CLIENT_ID && API_KEY);
 };
 
-// Initialize Google Identity Services
-export const initGoogleDrive = (onInitComplete: () => void) => {
-    if (!isDriveConfigured()) {
-        console.warn("Google Drive Sync: CLIENT_ID or API_KEY missing.");
-        return;
-    }
-
-    const script = document.createElement('script');
-    script.src = "https://apis.google.com/js/api.js";
-    script.onload = () => {
-        gapi.load('client', async () => {
-            await gapi.client.init({
-                apiKey: API_KEY,
-                discoveryDocs: [DISCOVERY_DOC],
-            });
-            gapiInited = true;
-            if (gisInited) onInitComplete();
-        });
-    };
-    document.body.appendChild(script);
-
-    // GIS is already loaded via index.html script tag, but we need to configure it
-    const checkGis = setInterval(() => {
-        if (window.google && window.google.accounts) {
-            clearInterval(checkGis);
-            tokenClient = window.google.accounts.oauth2.initTokenClient({
-                client_id: CLIENT_ID,
-                scope: SCOPES,
-                callback: (tokenResponse: any) => {
-                    if (tokenResponse && tokenResponse.access_token) {
-                        accessToken = tokenResponse.access_token;
-                    }
-                },
-            });
-            gisInited = true;
-            if (gapiInited) onInitComplete();
+export const initGoogleDrivePromise = (): Promise<void> => {
+    return new Promise((resolve) => {
+        if (!isDriveConfigured()) {
+            console.warn("Google Drive Sync: CLIENT_ID or API_KEY missing.");
+            resolve();
+            return;
         }
-    }, 500);
+
+        if (isInitialized) {
+            resolve();
+            return;
+        }
+
+        // Load GAPI
+        const loadGapi = () => {
+            const script = document.createElement('script');
+            script.src = "https://apis.google.com/js/api.js";
+            script.onload = () => {
+                if (!window.gapi) { resolve(); return; }
+                window.gapi.load('client', async () => {
+                    try {
+                        await window.gapi.client.init({
+                            apiKey: API_KEY,
+                            discoveryDocs: [DISCOVERY_DOC],
+                        });
+                        loadGis(); // Proceed to load GIS
+                    } catch (e) {
+                        console.error("GAPI Init Error:", e);
+                        resolve();
+                    }
+                });
+            };
+            script.onerror = () => resolve();
+            document.body.appendChild(script);
+        };
+
+        // Load GIS (Google Identity Services)
+        const loadGis = () => {
+            const script = document.createElement('script');
+            script.src = "https://accounts.google.com/gsi/client";
+            script.onload = () => {
+                if (!window.google || !window.google.accounts) { resolve(); return; }
+                
+                try {
+                    tokenClient = window.google.accounts.oauth2.initTokenClient({
+                        client_id: CLIENT_ID,
+                        scope: SCOPES,
+                        callback: (tokenResponse: any) => {
+                            if (tokenResponse && tokenResponse.access_token) {
+                                saveToken(tokenResponse);
+                            }
+                        },
+                    });
+                    
+                    isInitialized = true;
+                    tryRestoreSession();
+                    resolve();
+                } catch (e) {
+                    console.error("GIS Init Error:", e);
+                    resolve();
+                }
+            };
+            script.onerror = () => resolve();
+            document.body.appendChild(script);
+        };
+
+        loadGapi();
+    });
 };
+
+const tryRestoreSession = () => {
+    try {
+        const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+        const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
+        
+        if (savedToken && expiry) {
+            const now = Date.now();
+            if (now < parseInt(expiry)) {
+                if (window.gapi && window.gapi.client) {
+                    window.gapi.client.setToken({ access_token: savedToken });
+                    // Explicitly flag as connected in localStorage for UI sync
+                    localStorage.setItem('gdrive_connected', 'true');
+                }
+            } else {
+                signOut();
+            }
+        }
+    } catch (e) {
+        console.error("Session restore error", e);
+    }
+};
+
+const saveToken = (tokenResponse: any) => {
+    if (tokenResponse.access_token) {
+        const expiresIn = tokenResponse.expires_in || 3599;
+        const expiryTime = Date.now() + (expiresIn * 1000);
+        localStorage.setItem(TOKEN_STORAGE_KEY, tokenResponse.access_token);
+        localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
+        localStorage.setItem('gdrive_connected', 'true');
+    }
+};
+
+// --- Auth Methods ---
 
 export const handleAuthClick = () => {
-    if (!tokenClient) return;
-    tokenClient.requestAccessToken({ prompt: '' });
-    // Note: The actual callback defined in initTokenClient handles the token storage
-};
-
-export const getAccessToken = () => {
-    return accessToken || (gapi.client.getToken() ? gapi.client.getToken().access_token : null);
-};
-
-export const isSignedIn = () => {
-    return !!getAccessToken();
+    if (tokenClient) {
+        tokenClient.requestAccessToken({ prompt: '' });
+    } else {
+        console.warn("Token client not initialized");
+    }
 };
 
 export const signOut = () => {
-    const token = getAccessToken();
-    if (token) {
-        window.google.accounts.oauth2.revoke(token, () => {});
-        gapi.client.setToken(null);
-        accessToken = null;
+    try {
+        const token = getAccessToken();
+        if (token && window.google) {
+            window.google.accounts.oauth2.revoke(token, () => {});
+        }
+        if (window.gapi && window.gapi.client) {
+            window.gapi.client.setToken(null);
+        }
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        localStorage.removeItem(TOKEN_EXPIRY_KEY);
+        localStorage.removeItem('gdrive_connected');
+    } catch (e) {
+        console.error("Sign out error", e);
     }
 };
 
-// --- Drive Operations ---
+export const getAccessToken = (): string | null => {
+    if (typeof window.gapi !== 'undefined' && window.gapi.client) {
+        return window.gapi.client.getToken()?.access_token || null;
+    }
+    return null;
+};
 
-// 1. Find existing backup file
+// Safe check that returns boolean without throwing
+export const isSignedIn = (): boolean => {
+    return !!getAccessToken();
+};
+
+// --- Drive API Operations ---
+
+// Safe helper to check if Drive API is ready
+const isDriveApiReady = () => {
+    return isInitialized && 
+           window.gapi && 
+           window.gapi.client && 
+           window.gapi.client.drive;
+};
+
 const findBackupFile = async (): Promise<DriveFile | null> => {
+    if (!isDriveApiReady()) return null;
+    
     try {
-        const response = await gapi.client.drive.files.list({
+        const response = await window.gapi.client.drive.files.list({
             q: `name = '${BACKUP_FILENAME}' and trashed = false`,
             fields: 'files(id, name, modifiedTime)',
             spaces: 'drive',
         });
         const files = response.result.files;
-        if (files && files.length > 0) {
-            return files[0] as DriveFile;
-        }
-        return null;
+        return (files && files.length > 0) ? files[0] as DriveFile : null;
     } catch (err) {
         console.error("Error finding file:", err);
         throw err;
     }
 };
 
-// 2. Upload (Create or Update)
 export const uploadBackup = async (data: BackupData): Promise<string> => {
-    if (!isSignedIn()) throw new Error("Not signed in");
+    if (!isSignedIn() || !isDriveApiReady()) throw new Error("Not connected to Drive");
 
     const fileContent = JSON.stringify(data, null, 2);
     const file = new Blob([fileContent], { type: 'application/json' });
@@ -175,7 +236,6 @@ export const uploadBackup = async (data: BackupData): Promise<string> => {
     };
 
     const existingFile = await findBackupFile();
-
     const accessToken = getAccessToken();
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -185,7 +245,6 @@ export const uploadBackup = async (data: BackupData): Promise<string> => {
     let method = 'POST';
 
     if (existingFile) {
-        // Update existing file
         url = `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`;
         method = 'PATCH';
     }
@@ -196,36 +255,45 @@ export const uploadBackup = async (data: BackupData): Promise<string> => {
         body: form,
     });
 
-    if (!response.ok) {
-        throw new Error('Upload failed: ' + response.statusText);
-    }
+    if (!response.ok) throw new Error('Upload failed: ' + response.statusText);
 
     const json = await response.json();
     return json.modifiedTime || new Date().toISOString();
 };
 
-// 3. Download (Load)
 export const downloadBackup = async (): Promise<BackupData> => {
-    if (!isSignedIn()) throw new Error("Not signed in");
+    if (!isSignedIn() || !isDriveApiReady()) throw new Error("Not connected to Drive");
 
     const existingFile = await findBackupFile();
-    if (!existingFile) {
-        throw new Error("Backup file not found in Google Drive.");
-    }
+    if (!existingFile) throw new Error("Backup file not found in Google Drive.");
 
-    const response = await gapi.client.drive.files.get({
+    const response = await window.gapi.client.drive.files.get({
         fileId: existingFile.id,
         alt: 'media',
     });
 
-    // gapi.client.drive.files.get with alt='media' returns the body in .body or .result
-    // However, GAPI behavior can vary. Safe bet is parsing the result.
     return typeof response.result === 'string' ? JSON.parse(response.result) : response.result;
 };
 
-// 4. Get File Metadata (Last Modified)
 export const getBackupMetadata = async (): Promise<string | null> => {
     if (!isSignedIn()) return null;
-    const file = await findBackupFile();
-    return file ? file.modifiedTime || null : null;
+    try {
+        const file = await findBackupFile();
+        return file ? file.modifiedTime || null : null;
+    } catch (e) {
+        return null;
+    }
+};
+
+export const checkForRemoteBackup = async (): Promise<{ exists: boolean, modifiedTime?: string } | null> => {
+    if (!isSignedIn()) return null;
+    try {
+        const file = await findBackupFile();
+        if (file) {
+            return { exists: true, modifiedTime: file.modifiedTime };
+        }
+    } catch (e) {
+        // Silently fail for auto-checks
+    }
+    return { exists: false };
 };

@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, Cloud, Upload, Download, LogIn, LogOut, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import { 
-    initGoogleDrive, 
+    initGoogleDrivePromise, 
     handleAuthClick, 
     signOut, 
     isSignedIn, 
@@ -17,7 +18,7 @@ interface CloudSyncModalProps {
     prompts: Prompt[];
     categories: string[];
     tags: string[];
-    onRestore: (data: BackupData) => void;
+    onRestore: (data: BackupData, silent?: boolean) => void;
     onClose: () => void;
 }
 
@@ -29,19 +30,22 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
     const [configMissing, setConfigMissing] = useState(false);
 
     useEffect(() => {
-        if (!isDriveConfigured()) {
-            setConfigMissing(true);
-            return;
-        }
+        const init = async () => {
+            if (!isDriveConfigured()) {
+                setConfigMissing(true);
+                return;
+            }
 
-        setIsLoading(true);
-        initGoogleDrive(async () => {
+            setIsLoading(true);
+            await initGoogleDrivePromise();
             setIsLoading(false);
+            
             if (isSignedIn()) {
                 setIsLoggedIn(true);
                 checkLastSync();
             }
-        });
+        };
+        init();
     }, []);
 
     const checkLastSync = async () => {
@@ -55,9 +59,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
 
     const handleLogin = () => {
         handleAuthClick();
-        // Since auth is popup based, we need to poll or wait for token. 
-        // For simplicity in this structure, we rely on the user clicking "Sync" or "Check" after popup closes,
-        // or a timeout.
+        // Poll for token update since it happens in popup/callback
         const check = setInterval(() => {
             if (isSignedIn()) {
                 setIsLoggedIn(true);
@@ -65,7 +67,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
                 clearInterval(check);
             }
         }, 1000);
-        setTimeout(() => clearInterval(check), 60000); // Stop checking after 1 min
+        setTimeout(() => clearInterval(check), 60000); 
     };
 
     const handleLogout = () => {
@@ -86,6 +88,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
             };
             const modifiedTime = await uploadBackup(data);
             setLastSyncTime(modifiedTime);
+            localStorage.setItem('last_cloud_sync', modifiedTime);
             setStatusMsg('Успешно сохранено!');
             setTimeout(() => setStatusMsg(''), 3000);
         } catch (error) {
@@ -102,7 +105,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
         try {
             const data = await downloadBackup();
             if (data && data.prompts) {
-                onRestore(data);
+                onRestore(data, false); // false = show confirm dialog handled by App.tsx logic or allow direct here
                 setStatusMsg('Данные восстановлены!');
                 setTimeout(() => onClose(), 1500);
             } else {
