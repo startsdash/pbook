@@ -11,21 +11,68 @@ declare global {
 
 // --- Configuration & Helpers ---
 
-const getEnvVar = (key: string): string => {
-    try {
-        // Check for process.env (Node/Webpack/Vite environments)
-        if (typeof process !== 'undefined' && process.env && process.env[key]) {
-            return process.env[key] as string;
-        }
-    } catch (e) {
-        // Ignore errors accessing process
+/**
+ * Robust way to retrieve API keys across different build environments (Vite, Webpack, CRA, Next.js).
+ * Bundlers replace 'process.env.VAR' or 'import.meta.env.VAR' with string literals at build time.
+ * Dynamic access (e.g. process.env[key]) usually FAILS in production builds.
+ */
+const getClientId = (): string => {
+  let key = '';
+  
+  // 1. Try Vite standard (import.meta.env)
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GOOGLE_CLIENT_ID) {
+      // @ts-ignore
+      key = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     }
-    return '';
+  } catch (e) {}
+
+  if (key) return key;
+
+  // 2. Try Node/Webpack/CRA (process.env)
+  // We must access properties DIRECTLY for the bundler to replace them.
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      if (process.env.VITE_GOOGLE_CLIENT_ID) return process.env.VITE_GOOGLE_CLIENT_ID;
+      if (process.env.REACT_APP_GOOGLE_CLIENT_ID) return process.env.REACT_APP_GOOGLE_CLIENT_ID;
+      if (process.env.GOOGLE_CLIENT_ID) return process.env.GOOGLE_CLIENT_ID;
+      if (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    }
+  } catch (e) {}
+
+  return '';
 };
 
-// You can hardcode these if environment variables fail, but be careful with secrets in frontend code.
-const CLIENT_ID = getEnvVar('GOOGLE_CLIENT_ID'); 
-const API_KEY = getEnvVar('GOOGLE_API_KEY');
+const getApiKey = (): string => {
+  let key = '';
+
+  // 1. Try Vite standard
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GOOGLE_API_KEY) {
+      // @ts-ignore
+      key = import.meta.env.VITE_GOOGLE_API_KEY;
+    }
+  } catch (e) {}
+
+  if (key) return key;
+
+  // 2. Try Node/Webpack/CRA
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      if (process.env.VITE_GOOGLE_API_KEY) return process.env.VITE_GOOGLE_API_KEY;
+      if (process.env.REACT_APP_GOOGLE_API_KEY) return process.env.REACT_APP_GOOGLE_API_KEY;
+      if (process.env.GOOGLE_API_KEY) return process.env.GOOGLE_API_KEY;
+      if (process.env.NEXT_PUBLIC_GOOGLE_API_KEY) return process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+    }
+  } catch (e) {}
+
+  return '';
+};
+
+const CLIENT_ID = getClientId();
+const API_KEY = getApiKey();
 
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
@@ -70,60 +117,61 @@ export const initGoogleDrivePromise = (): Promise<void> => {
             return;
         }
 
-        // Load GAPI
-        const loadGapi = () => {
+        // Helper to load script safely
+        const loadScript = (src: string, onLoad: () => void) => {
             const script = document.createElement('script');
-            script.src = "https://apis.google.com/js/api.js";
-            script.onload = () => {
-                if (!window.gapi) { resolve(); return; }
-                window.gapi.load('client', async () => {
-                    try {
-                        await window.gapi.client.init({
-                            apiKey: API_KEY,
-                            discoveryDocs: [DISCOVERY_DOC],
-                        });
-                        loadGis(); // Proceed to load GIS
-                    } catch (e) {
-                        console.error("GAPI Init Error:", e);
-                        resolve();
-                    }
-                });
+            script.src = src;
+            script.async = true;
+            script.defer = true;
+            script.onload = onLoad;
+            script.onerror = () => {
+                console.error(`Failed to load script: ${src}`);
+                resolve(); // Resolve anyway to prevent app hang
             };
-            script.onerror = () => resolve();
             document.body.appendChild(script);
         };
 
-        // Load GIS (Google Identity Services)
-        const loadGis = () => {
-            const script = document.createElement('script');
-            script.src = "https://accounts.google.com/gsi/client";
-            script.onload = () => {
-                if (!window.google || !window.google.accounts) { resolve(); return; }
-                
+        // 1. Load GAPI
+        loadScript("https://apis.google.com/js/api.js", () => {
+            if (!window.gapi) { resolve(); return; }
+            
+            window.gapi.load('client', async () => {
                 try {
-                    tokenClient = window.google.accounts.oauth2.initTokenClient({
-                        client_id: CLIENT_ID,
-                        scope: SCOPES,
-                        callback: (tokenResponse: any) => {
-                            if (tokenResponse && tokenResponse.access_token) {
-                                saveToken(tokenResponse);
-                            }
-                        },
+                    await window.gapi.client.init({
+                        apiKey: API_KEY,
+                        discoveryDocs: [DISCOVERY_DOC],
                     });
                     
-                    isInitialized = true;
-                    tryRestoreSession();
-                    resolve();
+                    // 2. Load GIS (Identity Services) after GAPI
+                    loadScript("https://accounts.google.com/gsi/client", () => {
+                        if (!window.google || !window.google.accounts) { resolve(); return; }
+
+                        try {
+                            tokenClient = window.google.accounts.oauth2.initTokenClient({
+                                client_id: CLIENT_ID,
+                                scope: SCOPES,
+                                callback: (tokenResponse: any) => {
+                                    if (tokenResponse && tokenResponse.access_token) {
+                                        saveToken(tokenResponse);
+                                    }
+                                },
+                            });
+                            
+                            isInitialized = true;
+                            tryRestoreSession();
+                            resolve();
+                        } catch (e) {
+                            console.error("GIS Init Error:", e);
+                            resolve();
+                        }
+                    });
+
                 } catch (e) {
-                    console.error("GIS Init Error:", e);
+                    console.error("GAPI Init Error:", e);
                     resolve();
                 }
-            };
-            script.onerror = () => resolve();
-            document.body.appendChild(script);
-        };
-
-        loadGapi();
+            });
+        });
     });
 };
 
@@ -137,11 +185,10 @@ const tryRestoreSession = () => {
             if (now < parseInt(expiry)) {
                 if (window.gapi && window.gapi.client) {
                     window.gapi.client.setToken({ access_token: savedToken });
-                    // Explicitly flag as connected in localStorage for UI sync
                     localStorage.setItem('gdrive_connected', 'true');
                 }
             } else {
-                signOut();
+                signOut(); // Token expired
             }
         }
     } catch (e) {
@@ -163,9 +210,10 @@ const saveToken = (tokenResponse: any) => {
 
 export const handleAuthClick = () => {
     if (tokenClient) {
+        // Use prompt: 'consent' to force showing account chooser if needed, or empty for auto
         tokenClient.requestAccessToken({ prompt: '' });
     } else {
-        console.warn("Token client not initialized");
+        console.warn("Token client not initialized. Check your network or API Keys.");
     }
 };
 
@@ -193,14 +241,12 @@ export const getAccessToken = (): string | null => {
     return null;
 };
 
-// Safe check that returns boolean without throwing
 export const isSignedIn = (): boolean => {
     return !!getAccessToken();
 };
 
 // --- Drive API Operations ---
 
-// Safe helper to check if Drive API is ready
 const isDriveApiReady = () => {
     return isInitialized && 
            window.gapi && 
@@ -221,7 +267,7 @@ const findBackupFile = async (): Promise<DriveFile | null> => {
         return (files && files.length > 0) ? files[0] as DriveFile : null;
     } catch (err) {
         console.error("Error finding file:", err);
-        throw err;
+        return null;
     }
 };
 
