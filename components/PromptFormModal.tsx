@@ -162,11 +162,12 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose}></div>
       
       {/* 
-         FIX: Changed height to fixed sm:h-[90vh] to allow internal scrolling.
-         Added overflow-hidden to prevent parent scrollbars.
+         Fixed height using dvh for mobile address bar compatibility.
+         Flex column layout to organize Header - Content - Footer.
       */}
-      <div className="relative w-full max-w-6xl bg-slate-900 sm:rounded-2xl shadow-2xl border border-slate-800 flex flex-col h-full sm:h-[90vh] overflow-hidden">
+      <div className="relative w-full max-w-6xl bg-slate-900 sm:rounded-2xl shadow-2xl border border-slate-800 flex flex-col h-[100dvh] sm:h-[90vh] overflow-hidden">
         
+        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/50 gap-4 sm:gap-0 shrink-0">
           <h2 className="text-xl font-bold text-white order-1">
             {initialData ? 'Редактировать промпт' : 'Новый промпт'}
@@ -194,15 +195,18 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
         </div>
 
         {/* 
-            FIX:
-            Mobile/Tablet (<lg): Flex-col. The wrapper scrolls (overflow-y-auto).
-            Desktop (>=lg): Flex-row. The wrapper does NOT scroll (overflow-hidden), internal columns scroll.
+            Form Content 
+            Mobile: Single vertical scroll for the whole form.
+            Desktop: Hidden overflow on container, independent scroll for columns.
         */}
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden relative">
+        <form 
+            id="prompt-form"
+            onSubmit={handleSubmit} 
+            className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden relative bg-slate-950"
+        >
             
             {/* Left Column: Result & Inputs */}
-            {/* On Desktop, this has its own scrollbar. On mobile, it just stacks. */}
-            <div className="w-full lg:w-1/2 p-4 sm:p-6 h-auto lg:h-full lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-800 space-y-6 scrollbar-thin scrollbar-thumb-slate-800 pb-6 lg:pb-20">
+            <div className="w-full lg:w-1/2 p-4 sm:p-6 h-auto lg:h-full lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-800 space-y-6 scrollbar-thin scrollbar-thumb-slate-800">
                 
                 {/* Meta Fields */}
                 <div className="space-y-4">
@@ -321,8 +325,7 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
             </div>
 
             {/* Right Column: Components Builder */}
-            {/* Same logic: Desktop has independent scroll, mobile stacks. */}
-            <div className="w-full lg:w-1/2 p-4 sm:p-6 h-auto lg:h-full lg:overflow-y-auto bg-slate-900 border-t lg:border-t-0 border-slate-800 pb-20 scrollbar-thin scrollbar-thumb-slate-800">
+            <div className="w-full lg:w-1/2 p-4 sm:p-6 h-auto lg:h-full lg:overflow-y-auto bg-slate-900 border-t lg:border-t-0 border-slate-800 scrollbar-thin scrollbar-thumb-slate-800">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
                     <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider">Конструктор</h3>
                     <select 
@@ -396,25 +399,26 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
                     <Plus size={16} /> Добавить компонент вручную
                 </button>
             </div>
-            
-            {/* Fixed Footer for Save/Cancel */}
-            <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-slate-900 border-t border-slate-800 flex justify-end gap-3 z-20 shadow-lg">
-                 <button
-                    type="button"
-                    onClick={onClose}
-                    className="px-4 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-sm sm:text-base"
-                 >
-                    Отмена
-                 </button>
-                 <button
-                    type="submit"
-                    className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-lg shadow-indigo-500/20 flex items-center gap-2 text-sm sm:text-base"
-                 >
-                    <Save size={18} />
-                    Сохранить
-                 </button>
-            </div>
         </form>
+            
+        {/* Footer for Save/Cancel - Now OUTSIDE the form, stays fixed at bottom */}
+        <div className="p-3 sm:p-4 bg-slate-900 border-t border-slate-800 flex justify-end gap-3 shrink-0 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+                <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-sm sm:text-base"
+                >
+                Отмена
+                </button>
+                <button
+                type="submit"
+                form="prompt-form" // Links to the form ID
+                className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-lg shadow-indigo-500/20 flex items-center gap-2 text-sm sm:text-base"
+                >
+                <Save size={18} />
+                Сохранить
+                </button>
+        </div>
       </div>
     </div>
   );

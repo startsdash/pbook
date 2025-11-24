@@ -38,10 +38,9 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose}></div>
       
       {/* 
-          Fixed height on desktop (h-[90vh]) ensures the internal overflow works correctly.
-          Flex layout handles the header vs content area.
+          Container: 100dvh for mobile to handle browser bars.
       */}
-      <div className="relative w-full max-w-6xl bg-slate-900 sm:rounded-2xl shadow-2xl border border-slate-800 flex flex-col h-full sm:h-[90vh] overflow-hidden">
+      <div className="relative w-full max-w-6xl bg-slate-900 sm:rounded-2xl shadow-2xl border border-slate-800 flex flex-col h-[100dvh] sm:h-[90vh] overflow-hidden">
         
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/50 gap-4 sm:gap-0 shrink-0">
@@ -145,12 +144,13 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
 
         {/* 
             Content Area 
-            min-h-0 is crucial for nested flex scrolling 
+            Mobile: Single scroll view (overflow-y-auto on parent). Children stack naturally.
+            Desktop: Hidden overflow on parent. Independent scroll on children.
         */}
-        <div className="flex flex-col lg:flex-row flex-1 min-h-0 bg-slate-950">
+        <div className="flex flex-col lg:flex-row flex-1 min-h-0 bg-slate-950 overflow-y-auto lg:overflow-hidden">
             
             {/* Main Content: System & User Prompts */}
-            <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-6 scrollbar-thin scrollbar-thumb-slate-800">
+            <div className="flex-1 p-4 sm:p-6 lg:overflow-y-auto space-y-6 scrollbar-thin scrollbar-thumb-slate-800 h-auto lg:h-full">
                 
                 {/* System Prompt */}
                 <div className="space-y-2">
@@ -194,8 +194,8 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
             </div>
 
             {/* Sidebar: Info & Components */}
-            {/* Using explicit width (w-80/w-96) prevents squeezing of main content and overlaps. Added scrollbar styles. */}
-            <div className="w-full lg:w-80 xl:w-96 p-4 sm:p-6 border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-900/50 overflow-y-auto shrink-0 scrollbar-thin scrollbar-thumb-slate-800">
+            {/* Mobile: h-auto (stacks below), shrink-0. Desktop: fixed width, scrollable. */}
+            <div className="w-full lg:w-80 xl:w-96 p-4 sm:p-6 border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-900/50 lg:overflow-y-auto shrink-0 scrollbar-thin scrollbar-thumb-slate-800 h-auto lg:h-full">
                  <div className="mb-6">
                     <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-2">Описание</h3>
                     <p className="text-sm text-slate-300 leading-relaxed">{prompt.description}</p>
