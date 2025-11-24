@@ -1,5 +1,5 @@
 
-import { Prompt } from '../types';
+import { Prompt, Structure } from '../types';
 
 // TypeScript declarations for Google API globals
 declare global {
@@ -11,15 +11,8 @@ declare global {
 
 // --- Configuration & Helpers ---
 
-/**
- * Robust way to retrieve API keys across different build environments (Vite, Webpack, CRA, Next.js).
- * Bundlers replace 'process.env.VAR' or 'import.meta.env.VAR' with string literals at build time.
- * Dynamic access (e.g. process.env[key]) usually FAILS in production builds.
- */
 const getClientId = (): string => {
   let key = '';
-  
-  // 1. Try Vite standard (import.meta.env)
   try {
     // @ts-ignore
     if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GOOGLE_CLIENT_ID) {
@@ -30,8 +23,6 @@ const getClientId = (): string => {
 
   if (key) return key;
 
-  // 2. Try Node/Webpack/CRA (process.env)
-  // We must access properties DIRECTLY for the bundler to replace them.
   try {
     if (typeof process !== 'undefined' && process.env) {
       if (process.env.VITE_GOOGLE_CLIENT_ID) return process.env.VITE_GOOGLE_CLIENT_ID;
@@ -46,8 +37,6 @@ const getClientId = (): string => {
 
 const getApiKey = (): string => {
   let key = '';
-
-  // 1. Try Vite standard
   try {
     // @ts-ignore
     if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GOOGLE_API_KEY) {
@@ -58,7 +47,6 @@ const getApiKey = (): string => {
 
   if (key) return key;
 
-  // 2. Try Node/Webpack/CRA
   try {
     if (typeof process !== 'undefined' && process.env) {
       if (process.env.VITE_GOOGLE_API_KEY) return process.env.VITE_GOOGLE_API_KEY;
@@ -82,6 +70,7 @@ const TOKEN_EXPIRY_KEY = 'gdrive_token_expiry';
 
 let tokenClient: any;
 let isInitialized = false;
+let refreshResolver: ((value: void | PromiseLike<void>) => void) | null = null;
 
 // --- Interfaces ---
 
@@ -95,6 +84,7 @@ export interface BackupData {
   prompts: Prompt[];
   categories: string[];
   tags: string[];
+  structures: Structure[];
   lastUpdated: string;
 }
 
@@ -117,7 +107,6 @@ export const initGoogleDrivePromise = (): Promise<void> => {
             return;
         }
 
-        // Helper to load script safely
         const loadScript = (src: string, onLoad: () => void) => {
             const script = document.createElement('script');
             script.src = src;
@@ -126,12 +115,11 @@ export const initGoogleDrivePromise = (): Promise<void> => {
             script.onload = onLoad;
             script.onerror = () => {
                 console.error(`Failed to load script: ${src}`);
-                resolve(); // Resolve anyway to prevent app hang
+                resolve(); 
             };
             document.body.appendChild(script);
         };
 
-        // 1. Load GAPI
         loadScript("https://apis.google.com/js/api.js", () => {
             if (!window.gapi) { resolve(); return; }
             
@@ -142,7 +130,6 @@ export const initGoogleDrivePromise = (): Promise<void> => {
                         discoveryDocs: [DISCOVERY_DOC],
                     });
                     
-                    // 2. Load GIS (Identity Services) after GAPI
                     loadScript("https://accounts.google.com/gsi/client", () => {
                         if (!window.google || !window.google.accounts) { resolve(); return; }
 
@@ -153,6 +140,11 @@ export const initGoogleDrivePromise = (): Promise<void> => {
                                 callback: (tokenResponse: any) => {
                                     if (tokenResponse && tokenResponse.access_token) {
                                         saveToken(tokenResponse);
+                                        // Resolve promise if we were waiting for a refresh
+                                        if (refreshResolver) {
+                                            refreshResolver();
+                                            refreshResolver = null;
+                                        }
                                     }
                                 },
                             });
@@ -178,18 +170,11 @@ export const initGoogleDrivePromise = (): Promise<void> => {
 const tryRestoreSession = () => {
     try {
         const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-        const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
-        
-        if (savedToken && expiry) {
-            const now = Date.now();
-            if (now < parseInt(expiry)) {
-                if (window.gapi && window.gapi.client) {
-                    window.gapi.client.setToken({ access_token: savedToken });
-                    localStorage.setItem('gdrive_connected', 'true');
-                }
-            } else {
-                signOut(); // Token expired
-            }
+        // We don't strictly check expiry here for the initial load state,
+        // we'll rely on ensureValidToken() before actual calls.
+        if (savedToken && window.gapi && window.gapi.client) {
+            window.gapi.client.setToken({ access_token: savedToken });
+            localStorage.setItem('gdrive_connected', 'true');
         }
     } catch (e) {
         console.error("Session restore error", e);
@@ -208,12 +193,27 @@ const saveToken = (tokenResponse: any) => {
 
 // --- Auth Methods ---
 
+export const ensureValidToken = async (): Promise<void> => {
+    if (!tokenClient) return;
+
+    const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
+    const now = Date.now();
+    
+    // Refresh if expired or expiring in less than 5 minutes (300000 ms)
+    if (!expiry || now > parseInt(expiry) - 300000) {
+        console.log("Token expired or close to expiry, refreshing...");
+        return new Promise((resolve) => {
+            refreshResolver = resolve;
+            // prompt: '' attempts to refresh without user interaction
+            tokenClient.requestAccessToken({ prompt: '' });
+        });
+    }
+    return Promise.resolve();
+};
+
 export const handleAuthClick = () => {
     if (tokenClient) {
-        // Use prompt: 'consent' to force showing account chooser if needed, or empty for auto
-        tokenClient.requestAccessToken({ prompt: '' });
-    } else {
-        console.warn("Token client not initialized. Check your network or API Keys.");
+        tokenClient.requestAccessToken({ prompt: 'consent' });
     }
 };
 
@@ -248,14 +248,12 @@ export const isSignedIn = (): boolean => {
 // --- Drive API Operations ---
 
 const isDriveApiReady = () => {
-    return isInitialized && 
-           window.gapi && 
-           window.gapi.client && 
-           window.gapi.client.drive;
+    return isInitialized && window.gapi && window.gapi.client && window.gapi.client.drive;
 };
 
 const findBackupFile = async (): Promise<DriveFile | null> => {
     if (!isDriveApiReady()) return null;
+    await ensureValidToken();
     
     try {
         const response = await window.gapi.client.drive.files.list({
@@ -272,7 +270,8 @@ const findBackupFile = async (): Promise<DriveFile | null> => {
 };
 
 export const uploadBackup = async (data: BackupData): Promise<string> => {
-    if (!isSignedIn() || !isDriveApiReady()) throw new Error("Not connected to Drive");
+    if (!isDriveApiReady()) throw new Error("Not connected to Drive");
+    await ensureValidToken();
 
     const fileContent = JSON.stringify(data, null, 2);
     const file = new Blob([fileContent], { type: 'application/json' });
@@ -308,7 +307,8 @@ export const uploadBackup = async (data: BackupData): Promise<string> => {
 };
 
 export const downloadBackup = async (): Promise<BackupData> => {
-    if (!isSignedIn() || !isDriveApiReady()) throw new Error("Not connected to Drive");
+    if (!isDriveApiReady()) throw new Error("Not connected to Drive");
+    await ensureValidToken();
 
     const existingFile = await findBackupFile();
     if (!existingFile) throw new Error("Backup file not found in Google Drive.");
@@ -322,7 +322,6 @@ export const downloadBackup = async (): Promise<BackupData> => {
 };
 
 export const getBackupMetadata = async (): Promise<string | null> => {
-    if (!isSignedIn()) return null;
     try {
         const file = await findBackupFile();
         return file ? file.modifiedTime || null : null;
@@ -332,7 +331,6 @@ export const getBackupMetadata = async (): Promise<string | null> => {
 };
 
 export const checkForRemoteBackup = async (): Promise<{ exists: boolean, modifiedTime?: string } | null> => {
-    if (!isSignedIn()) return null;
     try {
         const file = await findBackupFile();
         if (file) {

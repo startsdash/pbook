@@ -12,17 +12,18 @@ import {
     isDriveConfigured,
     BackupData 
 } from '../services/googleDriveService';
-import { Prompt } from '../types';
+import { Prompt, Structure } from '../types';
 
 interface CloudSyncModalProps {
     prompts: Prompt[];
     categories: string[];
     tags: string[];
+    structures: Structure[];
     onRestore: (data: BackupData, silent?: boolean) => void;
     onClose: () => void;
 }
 
-export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categories, tags, onRestore, onClose }) => {
+export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categories, tags, structures, onRestore, onClose }) => {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [statusMsg, setStatusMsg] = useState('');
@@ -59,7 +60,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
 
     const handleLogin = () => {
         handleAuthClick();
-        // Poll for token update since it happens in popup/callback
         const check = setInterval(() => {
             if (isSignedIn()) {
                 setIsLoggedIn(true);
@@ -84,6 +84,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
                 prompts,
                 categories,
                 tags,
+                structures, // Added structures
                 lastUpdated: new Date().toISOString()
             };
             const modifiedTime = await uploadBackup(data);
@@ -105,7 +106,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
         try {
             const data = await downloadBackup();
             if (data && data.prompts) {
-                onRestore(data, false); // false = show confirm dialog handled by App.tsx logic or allow direct here
+                onRestore(data, false);
                 setStatusMsg('Данные восстановлены!');
                 setTimeout(() => onClose(), 1500);
             } else {
@@ -133,11 +134,6 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
                         <div className="text-slate-400 text-sm mb-4 space-y-3">
                             <p>
                                 Для работы с Google Drive необходимо настроить <code>GOOGLE_CLIENT_ID</code> и <code>GOOGLE_API_KEY</code> в переменных окружения.
-                            </p>
-                            <p className="text-xs bg-slate-950 p-3 rounded border border-slate-800 text-slate-500">
-                                <strong>Совет для Vercel / Vite:</strong><br/>
-                                Если переменные добавлены, но не видны, попробуйте добавить префикс <code>VITE_</code> к названиям переменных в настройках проекта.<br/>
-                                Например: <code>VITE_GOOGLE_CLIENT_ID</code>
                             </p>
                         </div>
                         <button onClick={onClose} className="bg-slate-800 text-white px-4 py-2 rounded hover:bg-slate-700">Закрыть</button>
@@ -168,11 +164,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
                             <p className="text-slate-400 text-sm mb-6">
                                 Войдите в Google аккаунт, чтобы сохранять резервные копии и синхронизировать промпты между устройствами.
                             </p>
-                            <button 
-                                onClick={handleLogin}
-                                disabled={isLoading}
-                                className="flex items-center justify-center gap-2 w-full py-3 bg-white text-slate-900 font-bold rounded-lg hover:bg-slate-200 transition-colors disabled:opacity-50"
-                            >
+                            <button onClick={handleLogin} disabled={isLoading} className="flex items-center justify-center gap-2 w-full py-3 bg-white text-slate-900 font-bold rounded-lg hover:bg-slate-200 transition-colors disabled:opacity-50">
                                 {isLoading ? <RefreshCw className="animate-spin" /> : <LogIn size={18} />}
                                 Войти через Google
                             </button>
@@ -198,25 +190,15 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
-                                <button 
-                                    onClick={handleUpload}
-                                    disabled={isLoading}
-                                    className="flex flex-col items-center justify-center gap-2 p-4 bg-slate-800 hover:bg-indigo-600 border border-slate-700 hover:border-indigo-500 rounded-xl transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
+                                <button onClick={handleUpload} disabled={isLoading} className="flex flex-col items-center justify-center gap-2 p-4 bg-slate-800 hover:bg-indigo-600 border border-slate-700 hover:border-indigo-500 rounded-xl transition-all group disabled:opacity-50 disabled:cursor-not-allowed">
                                     <Upload size={24} className="text-slate-400 group-hover:text-white mb-1" />
                                     <span className="text-sm font-medium text-slate-300 group-hover:text-white">Сохранить</span>
                                 </button>
-
-                                <button 
-                                    onClick={handleDownload}
-                                    disabled={isLoading}
-                                    className="flex flex-col items-center justify-center gap-2 p-4 bg-slate-800 hover:bg-emerald-600 border border-slate-700 hover:border-emerald-500 rounded-xl transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
+                                <button onClick={handleDownload} disabled={isLoading} className="flex flex-col items-center justify-center gap-2 p-4 bg-slate-800 hover:bg-emerald-600 border border-slate-700 hover:border-emerald-500 rounded-xl transition-all group disabled:opacity-50 disabled:cursor-not-allowed">
                                     <Download size={24} className="text-slate-400 group-hover:text-white mb-1" />
                                     <span className="text-sm font-medium text-slate-300 group-hover:text-white">Загрузить</span>
                                 </button>
                             </div>
-
                             {statusMsg && (
                                 <div className={`text-center text-sm font-medium py-2 rounded ${statusMsg.includes('Ошибка') ? 'text-red-400 bg-red-900/20' : 'text-emerald-400 bg-emerald-900/20'}`}>
                                     {statusMsg}

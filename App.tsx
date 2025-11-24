@@ -9,22 +9,19 @@ import { PromptFormModal } from './components/PromptFormModal';
 import { StructureManagerModal } from './components/StructureManagerModal';
 import { SettingsModal } from './components/SettingsModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
-import { Search, BookOpen, Plus, Layers, Download, Upload, Settings, Menu, X, Cloud } from 'lucide-react';
+import { Search, BookOpen, Plus, Layers, Download, Upload, Settings, Menu, X, Cloud, RefreshCw } from 'lucide-react';
 import { exportPromptsToExcel, parseExcelDatabase } from './utils/fileExport';
-import { BackupData, initGoogleDrivePromise, checkForRemoteBackup, downloadBackup, isSignedIn } from './services/googleDriveService';
+import { BackupData, initGoogleDrivePromise, checkForRemoteBackup, downloadBackup, isSignedIn, uploadBackup } from './services/googleDriveService';
 
 export default function App() {
   const [prompts, setPrompts] = useState<Prompt[]>(INITIAL_PROMPTS);
   const [structures, setStructures] = useState<Structure[]>(INITIAL_STRUCTURES);
-  
-  // Dynamic Categories & Tags
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
   const [availableTags, setAvailableTags] = useState<string[]>(INITIAL_TAGS);
 
   const [selectedCategory, setSelectedCategory] = useState<string>('Все');
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Modals state
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isStructureManagerOpen, setIsStructureManagerOpen] = useState(false);
@@ -32,17 +29,41 @@ export default function App() {
   const [isCloudSyncOpen, setIsCloudSyncOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
   
-  // UI State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDriveConnected, setDriveConnected] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false); // New syncing state
   
-  // File Input Ref
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Toast Notification State
   const [toastMessage, setToastMessage] = useState<{title: string, action?: () => void, actionLabel?: string} | null>(null);
 
-  // Auto-init Google Drive
+  // Auto-save logic
+  useEffect(() => {
+    if (!isDriveConnected) return;
+
+    const autoSave = async () => {
+        setIsSyncing(true);
+        try {
+            await uploadBackup({
+                prompts,
+                categories,
+                tags: availableTags,
+                structures,
+                lastUpdated: new Date().toISOString()
+            });
+            localStorage.setItem('last_cloud_sync', new Date().toISOString());
+        } catch (e) {
+            console.error("Auto-save failed", e);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    // Debounce: Wait 2 seconds after last change before saving
+    const timer = setTimeout(autoSave, 2000);
+    return () => clearTimeout(timer);
+  }, [prompts, categories, availableTags, structures, isDriveConnected]);
+
+  // Init Google Drive & Auto-Load
   useEffect(() => {
       let mounted = true;
 
@@ -52,12 +73,10 @@ export default function App() {
               
               if (!mounted) return;
 
-              // Safe check for connection status
               const connected = isSignedIn();
               setDriveConnected(connected);
 
               if (connected) {
-                  // Auto-check for updates
                   const result = await checkForRemoteBackup();
                   
                   if (!mounted) return;
@@ -67,18 +86,24 @@ export default function App() {
                       const cloudTime = new Date(result.modifiedTime).getTime();
                       const localTime = localLastSync ? new Date(localLastSync).getTime() : 0;
 
-                      // If cloud is newer by more than 1 minute
-                      if (cloudTime > localTime + 60000) {
+                      // If we have a fresh install (default data) and cloud has data -> Auto Load
+                      // Check if current prompts equal initial prompts roughly
+                      const isDefaultState = prompts === INITIAL_PROMPTS; // Simplified check
+
+                      if (isDefaultState || cloudTime > localTime + 60000) {
                           setToastMessage({
-                              title: 'Найден новый бэкап в облаке',
+                              title: 'Доступна новая версия в облаке',
                               actionLabel: 'Загрузить',
                               action: async () => {
                                   try {
+                                      setIsSyncing(true);
                                       const data = await downloadBackup();
                                       handleCloudRestore(data, true);
                                       setToastMessage(null);
                                   } catch (e) {
                                       alert('Ошибка загрузки бэкапа');
+                                  } finally {
+                                      setIsSyncing(false);
                                   }
                               }
                           });
@@ -93,9 +118,8 @@ export default function App() {
       initDrive();
       
       return () => { mounted = false; };
-  }, [isCloudSyncOpen]); // Re-check when modal closes in case user logged in
+  }, [isCloudSyncOpen]); 
 
-  // Filter prompts
   const filteredPrompts = useMemo(() => {
     return prompts.filter(prompt => {
       const matchesCategory = selectedCategory === 'Все' || prompt.category === selectedCategory;
@@ -108,7 +132,6 @@ export default function App() {
     });
   }, [selectedCategory, searchQuery, prompts]);
 
-  // Handlers
   const handleCreatePrompt = () => {
     setEditingPrompt(null);
     setIsFormOpen(true);
@@ -127,7 +150,6 @@ export default function App() {
         setPrompts(prev => [promptData, ...prev]);
     }
     
-    // Auto-add new tags to available tags
     promptData.tags.forEach(tag => {
         if (!availableTags.includes(tag)) {
             setAvailableTags(prev => [...prev, tag]);
@@ -224,14 +246,14 @@ export default function App() {
           if (data.prompts) setPrompts(data.prompts);
           if (data.categories) setCategories(data.categories);
           if (data.tags) setAvailableTags(data.tags);
+          if (data.structures) setStructures(data.structures);
           localStorage.setItem('last_cloud_sync', new Date().toISOString());
       };
 
       if (silent) {
           performRestore();
-          alert('База данных обновлена из облака.');
       } else {
-          if (window.confirm(`Обнаружена резервная копия от ${new Date(data.lastUpdated).toLocaleString()}. Восстановить?\nЭто заменит текущую базу.`)) {
+          if (window.confirm(`Обнаружена резервная копия от ${new Date(data.lastUpdated).toLocaleString()}. Восстановить?`)) {
               performRestore();
           }
       }
@@ -239,24 +261,12 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden">
-      
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleFileChange} 
-        accept=".xlsx, .xls"
-        className="hidden"
-      />
+      <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".xlsx, .xls" className="hidden" />
 
-      {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div 
-            className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm"
-            onClick={() => setIsMobileMenuOpen(false)}
-        ></div>
+        <div className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}></div>
       )}
 
-      {/* Toast Notification */}
       {toastMessage && (
           <div className="fixed bottom-6 right-6 z-[100] bg-slate-800 border border-indigo-500/50 shadow-2xl p-4 rounded-xl flex items-center gap-4 animate-in slide-in-from-bottom-5">
               <div className="bg-indigo-500/20 p-2 rounded-full">
@@ -267,10 +277,7 @@ export default function App() {
                   <div className="text-xs text-slate-400">Синхронизация Google Drive</div>
               </div>
               {toastMessage.action && (
-                  <button 
-                    onClick={toastMessage.action}
-                    className="ml-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
-                  >
+                  <button onClick={toastMessage.action} className="ml-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors">
                       {toastMessage.actionLabel}
                   </button>
               )}
@@ -280,7 +287,6 @@ export default function App() {
           </div>
       )}
 
-      {/* Sidebar (Responsive) */}
       <aside className={`
         fixed inset-y-0 left-0 z-50 w-72 bg-slate-950 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out md:relative md:translate-x-0
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -293,37 +299,21 @@ export default function App() {
                 <h1 className="font-bold text-xl tracking-tight text-white">Prompt Book</h1>
             </div>
             <div className="flex items-center gap-1">
-                <button 
-                    onClick={() => { setIsSettingsOpen(true); setIsMobileMenuOpen(false); }}
-                    className="text-slate-500 hover:text-white transition-colors p-2"
-                    title="Настройки"
-                >
+                <button onClick={() => { setIsSettingsOpen(true); setIsMobileMenuOpen(false); }} className="text-slate-500 hover:text-white transition-colors p-2">
                     <Settings size={20} />
                 </button>
-                {/* Close button only visible on mobile */}
-                <button 
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className="md:hidden text-slate-500 hover:text-white transition-colors p-2"
-                >
+                <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden text-slate-500 hover:text-white transition-colors p-2">
                     <X size={24} />
                 </button>
             </div>
         </div>
         
         <div className="p-4 pb-0 space-y-2">
-            <button 
-                onClick={() => { handleCreatePrompt(); setIsMobileMenuOpen(false); }}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-lg shadow-indigo-900/20 active:scale-95 duration-100"
-            >
-                <Plus size={18} />
-                Создать промпт
+            <button onClick={() => { handleCreatePrompt(); setIsMobileMenuOpen(false); }} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-lg shadow-indigo-900/20 active:scale-95 duration-100">
+                <Plus size={18} /> Создать промпт
             </button>
-            <button 
-                onClick={() => { setIsStructureManagerOpen(true); setIsMobileMenuOpen(false); }}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors active:scale-95 duration-100"
-            >
-                <Layers size={18} />
-                Структуры
+            <button onClick={() => { setIsStructureManagerOpen(true); setIsMobileMenuOpen(false); }} className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors active:scale-95 duration-100">
+                <Layers size={18} /> Структуры
             </button>
         </div>
         
@@ -334,46 +324,26 @@ export default function App() {
 
         <div className="p-4 border-t border-slate-800 space-y-3 pb-8 md:pb-4">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">База данных</div>
-            
-            {/* Google Drive Sync Button */}
-            <button
-                onClick={() => { setIsCloudSyncOpen(true); setIsMobileMenuOpen(false); }}
-                className="w-full flex items-center justify-center gap-2 bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-sm text-slate-300 hover:text-white group relative"
-            >
-                <Cloud size={18} className="text-blue-500 group-hover:text-blue-400" />
+            <button onClick={() => { setIsCloudSyncOpen(true); setIsMobileMenuOpen(false); }} className="w-full flex items-center justify-center gap-2 bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-sm text-slate-300 hover:text-white group relative">
+                {isSyncing ? <RefreshCw size={18} className="text-blue-500 animate-spin" /> : <Cloud size={18} className="text-blue-500 group-hover:text-blue-400" />}
                 Google Drive
-                {isDriveConnected && <div className="absolute top-3 right-3 w-2 h-2 bg-green-500 rounded-full"></div>}
+                {isDriveConnected && !isSyncing && <div className="absolute top-3 right-3 w-2 h-2 bg-green-500 rounded-full"></div>}
             </button>
-
             <div className="grid grid-cols-2 gap-2">
-                <button 
-                    onClick={handleExportDatabase}
-                    className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-xs text-slate-400 hover:text-white active:bg-slate-800"
-                >
-                    <Download size={18} className="text-emerald-500 mb-1" />
-                    Экспорт
+                <button onClick={handleExportDatabase} className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-xs text-slate-400 hover:text-white active:bg-slate-800">
+                    <Download size={18} className="text-emerald-500 mb-1" /> Экспорт
                 </button>
-                <button 
-                    onClick={handleImportClick}
-                    className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-xs text-slate-400 hover:text-white active:bg-slate-800"
-                >
-                    <Upload size={18} className="text-blue-500 mb-1" />
-                    Импорт
+                <button onClick={handleImportClick} className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-xs text-slate-400 hover:text-white active:bg-slate-800">
+                    <Upload size={18} className="text-blue-500 mb-1" /> Импорт
                 </button>
             </div>
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full">
-        
-        {/* Mobile Header */}
         <div className="md:hidden p-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between sticky top-0 z-20">
             <div className="flex items-center gap-3">
-                 <button 
-                    onClick={() => setIsMobileMenuOpen(true)}
-                    className="text-slate-300 hover:text-white p-1"
-                 >
+                 <button onClick={() => setIsMobileMenuOpen(true)} className="text-slate-300 hover:text-white p-1">
                     <Menu size={24} />
                  </button>
                  <div className="flex items-center gap-2">
@@ -383,38 +353,21 @@ export default function App() {
             </div>
             <div className="flex gap-2">
                 <button onClick={() => setIsCloudSyncOpen(true)} className="text-slate-400 p-2 rounded-full hover:bg-slate-800 relative">
-                    <Cloud size={22} />
-                    {isDriveConnected && <div className="absolute top-2 right-2 w-2 h-2 bg-green-500 rounded-full border border-slate-950"></div>}
-                </button>
-                <button onClick={() => setIsSettingsOpen(true)} className="text-slate-400 p-2 rounded-full hover:bg-slate-800">
-                    <Settings size={22} />
+                    {isSyncing ? <RefreshCw size={22} className="animate-spin text-blue-500"/> : <Cloud size={22} />}
+                    {isDriveConnected && !isSyncing && <div className="absolute top-2 right-2 w-2 h-2 bg-green-500 rounded-full border border-slate-950"></div>}
                 </button>
             </div>
         </div>
 
-        {/* Top Bar (Desktop & Mobile) */}
         <div className="h-16 border-b border-slate-800 bg-slate-950/50 backdrop-blur-sm flex items-center px-4 md:px-6 sticky top-16 md:top-0 z-10">
           <div className="relative w-full max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-            <input 
-              type="text"
-              placeholder="Поиск промптов..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 text-slate-200 pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:border-indigo-500 transition-all text-sm"
-            />
-          </div>
-          <div className="ml-auto flex items-center gap-4">
-             <div className="text-xs text-slate-500 hidden sm:block">
-                Powered by <span className="text-slate-300 font-medium">Gemini</span>
-             </div>
+            <input type="text" placeholder="Поиск промптов..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-slate-200 pl-10 pr-4 py-2 rounded-lg focus:outline-none focus:border-indigo-500 transition-all text-sm" />
           </div>
         </div>
 
-        {/* Prompts Grid */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth">
           <div className="max-w-7xl mx-auto">
-             
              <div className="mb-6 flex flex-wrap items-baseline gap-2">
                 <h2 className="text-xl md:text-2xl font-bold text-white">{selectedCategory}</h2>
                 <span className="text-slate-500 text-sm">({filteredPrompts.length})</span>
@@ -423,11 +376,7 @@ export default function App() {
              {filteredPrompts.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 pb-20 md:pb-10">
                     {filteredPrompts.map(prompt => (
-                    <PromptCard 
-                        key={prompt.id} 
-                        prompt={prompt} 
-                        onClick={setSelectedPrompt} 
-                    />
+                    <PromptCard key={prompt.id} prompt={prompt} onClick={setSelectedPrompt} />
                     ))}
                 </div>
              ) : (
@@ -440,54 +389,11 @@ export default function App() {
         </div>
       </main>
 
-      {/* Modals */}
-      {selectedPrompt && (
-        <PromptDetailModal 
-          prompt={selectedPrompt} 
-          onClose={() => setSelectedPrompt(null)} 
-          onEdit={handleEditPrompt}
-          onDelete={handleDeletePrompt}
-        />
-      )}
-
-      {isFormOpen && (
-        <PromptFormModal
-            initialData={editingPrompt}
-            structures={structures}
-            categories={categories}
-            availableTags={availableTags}
-            onSave={handleSavePrompt}
-            onClose={() => setIsFormOpen(false)}
-        />
-      )}
-
-      {isStructureManagerOpen && (
-          <StructureManagerModal
-            structures={structures}
-            onUpdateStructures={setStructures}
-            onClose={() => setIsStructureManagerOpen(false)}
-          />
-      )}
-
-      {isSettingsOpen && (
-          <SettingsModal
-            categories={categories}
-            setCategories={setCategories}
-            tags={availableTags}
-            setTags={setAvailableTags}
-            onClose={() => setIsSettingsOpen(false)}
-          />
-      )}
-
-      {isCloudSyncOpen && (
-          <CloudSyncModal
-            prompts={prompts}
-            categories={categories}
-            tags={availableTags}
-            onRestore={handleCloudRestore}
-            onClose={() => setIsCloudSyncOpen(false)}
-          />
-      )}
+      {selectedPrompt && <PromptDetailModal prompt={selectedPrompt} onClose={() => setSelectedPrompt(null)} onEdit={handleEditPrompt} onDelete={handleDeletePrompt} />}
+      {isFormOpen && <PromptFormModal initialData={editingPrompt} structures={structures} categories={categories} availableTags={availableTags} onSave={handleSavePrompt} onClose={() => setIsFormOpen(false)} />}
+      {isStructureManagerOpen && <StructureManagerModal structures={structures} onUpdateStructures={setStructures} onClose={() => setIsStructureManagerOpen(false)} />}
+      {isSettingsOpen && <SettingsModal categories={categories} setCategories={setCategories} tags={availableTags} setTags={setAvailableTags} onClose={() => setIsSettingsOpen(false)} />}
+      {isCloudSyncOpen && <CloudSyncModal prompts={prompts} categories={categories} tags={availableTags} structures={structures} onRestore={handleCloudRestore} onClose={() => setIsCloudSyncOpen(false)} />}
     </div>
   );
 }
