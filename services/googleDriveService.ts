@@ -1,4 +1,3 @@
-
 import { Prompt, Structure } from '../types';
 
 // TypeScript declarations for Google API globals
@@ -70,7 +69,8 @@ const TOKEN_EXPIRY_KEY = 'gdrive_token_expiry';
 
 let tokenClient: any;
 let isInitialized = false;
-let refreshResolver: ((value: void | PromiseLike<void>) => void) | null = null;
+// Queue for token refresh promises to prevent parallel refresh requests
+let refreshPromise: Promise<void> | null = null;
 
 // --- Interfaces ---
 
@@ -108,6 +108,10 @@ export const initGoogleDrivePromise = (): Promise<void> => {
         }
 
         const loadScript = (src: string, onLoad: () => void) => {
+            if (document.querySelector(`script[src="${src}"]`)) {
+                onLoad();
+                return;
+            }
             const script = document.createElement('script');
             script.src = src;
             script.async = true;
@@ -140,17 +144,13 @@ export const initGoogleDrivePromise = (): Promise<void> => {
                                 callback: (tokenResponse: any) => {
                                     if (tokenResponse && tokenResponse.access_token) {
                                         saveToken(tokenResponse);
-                                        // Resolve promise if we were waiting for a refresh
-                                        if (refreshResolver) {
-                                            refreshResolver();
-                                            refreshResolver = null;
-                                        }
                                     }
                                 },
                             });
                             
                             isInitialized = true;
-                            tryRestoreSession();
+                            // Attempt to restore session without prompting
+                            const restored = restoreSession();
                             resolve();
                         } catch (e) {
                             console.error("GIS Init Error:", e);
@@ -167,15 +167,26 @@ export const initGoogleDrivePromise = (): Promise<void> => {
     });
 };
 
-const tryRestoreSession = () => {
+const restoreSession = (): boolean => {
     try {
         const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-        if (savedToken && window.gapi && window.gapi.client) {
-            window.gapi.client.setToken({ access_token: savedToken });
-            localStorage.setItem('gdrive_connected', 'true');
+        const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
+        
+        if (savedToken && expiry) {
+            const now = Date.now();
+            // If token is valid (with 5 min buffer), set it
+            if (now < parseInt(expiry) - 300000) {
+                if (window.gapi && window.gapi.client) {
+                    window.gapi.client.setToken({ access_token: savedToken });
+                    localStorage.setItem('gdrive_connected', 'true');
+                    return true;
+                }
+            }
         }
+        return false;
     } catch (e) {
         console.error("Session restore error", e);
+        return false;
     }
 };
 
@@ -192,41 +203,58 @@ const saveToken = (tokenResponse: any) => {
 // --- Auth Methods ---
 
 export const ensureValidToken = async (): Promise<void> => {
-    if (!tokenClient) {
-        if (isInitialized && window.google) {
-            // Re-init client if it's missing but we are initialized (rare edge case)
-             tokenClient = window.google.accounts.oauth2.initTokenClient({
-                client_id: CLIENT_ID,
-                scope: SCOPES,
-                callback: (tokenResponse: any) => {
-                     if (tokenResponse && tokenResponse.access_token) {
-                        saveToken(tokenResponse);
-                        if (refreshResolver) { refreshResolver(); refreshResolver = null; }
-                    }
-                },
-            });
-        } else {
-            return;
-        }
-    }
+    if (!tokenClient) return Promise.reject("Google Auth not initialized");
 
     const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
     const now = Date.now();
     
-    // Refresh if expired or expiring in less than 5 minutes (300000 ms)
+    // Check if expired or expiring soon (5 min buffer)
     if (!expiry || now > parseInt(expiry) - 300000) {
-        console.log("Token expired or close to expiry, refreshing...");
-        return new Promise((resolve) => {
-            refreshResolver = resolve;
-            // prompt: '' attempts to refresh without user interaction
-            tokenClient.requestAccessToken({ prompt: '' });
+        // Prevent multiple simultaneous refresh requests
+        if (refreshPromise) return refreshPromise;
+
+        refreshPromise = new Promise((resolve, reject) => {
+            try {
+                // Temporarily override callback for this specific request
+                tokenClient.callback = (resp: any) => {
+                     if (resp.error) {
+                         reject(resp);
+                     } else {
+                         saveToken(resp);
+                         resolve();
+                     }
+                     // Reset callback for normal flows? 
+                     // Actually GIS doesn't support easy callback resetting, 
+                     // but saving the token globally handles it.
+                     refreshPromise = null;
+                };
+                
+                // Silent refresh
+                tokenClient.requestAccessToken({ prompt: '' });
+            } catch (e) {
+                refreshPromise = null;
+                reject(e);
+            }
         });
+        
+        return refreshPromise;
     }
+    
+    // Ensure GAPI has the token set
+    const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (savedToken && window.gapi && window.gapi.client && !window.gapi.client.getToken()) {
+        window.gapi.client.setToken({ access_token: savedToken });
+    }
+
     return Promise.resolve();
 };
 
 export const handleAuthClick = () => {
     if (tokenClient) {
+        // We use the default callback defined in init
+        tokenClient.callback = (resp: any) => {
+            if (resp.access_token) saveToken(resp);
+        };
         tokenClient.requestAccessToken({ prompt: 'consent' });
     }
 };
@@ -256,7 +284,10 @@ export const getAccessToken = (): string | null => {
 };
 
 export const isSignedIn = (): boolean => {
-    return !!getAccessToken();
+    const token = getAccessToken();
+    const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
+    if (!token || !expiry) return false;
+    return Date.now() < parseInt(expiry);
 };
 
 // --- Drive API Operations ---
@@ -287,6 +318,7 @@ export const uploadBackup = async (data: BackupData): Promise<string> => {
     if (!isDriveApiReady()) throw new Error("Not connected to Drive");
     await ensureValidToken();
 
+    // Clean data before upload to remove UI-specific states if any
     const fileContent = JSON.stringify(data, null, 2);
     const file = new Blob([fileContent], { type: 'application/json' });
     const metadata = {
@@ -332,16 +364,22 @@ export const downloadBackup = async (): Promise<BackupData> => {
         alt: 'media',
     });
 
-    return typeof response.result === 'string' ? JSON.parse(response.result) : response.result;
+    // Ensure we parse correctly
+    let result = response.result;
+    if (typeof result === 'string') {
+        try {
+            result = JSON.parse(result);
+        } catch (e) {
+            console.error("Failed to parse backup JSON", e);
+            throw new Error("Invalid backup file format");
+        }
+    }
+    return result;
 };
 
 export const getBackupMetadata = async (): Promise<string | null> => {
-    try {
-        const file = await findBackupFile();
-        return file ? file.modifiedTime || null : null;
-    } catch (e) {
-        return null;
-    }
+    const file = await findBackupFile();
+    return file ? (file.modifiedTime || null) : null;
 };
 
 export const checkForRemoteBackup = async (): Promise<{ exists: boolean, modifiedTime?: string } | null> => {

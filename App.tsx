@@ -30,17 +30,105 @@ export default function App() {
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  // Sync States
   const [isDriveConnected, setDriveConnected] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isSyncEnabled, setIsSyncEnabled] = useState(false); // New flag to prevent initial overwrite
+  const [isSyncEnabled, setIsSyncEnabled] = useState(false); // Guard: prevents auto-save until initial check is done
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const skipNextSaveRef = useRef(false); // Guard: prevents upload loops after download
   const [toastMessage, setToastMessage] = useState<{title: string, action?: () => void, actionLabel?: string, onClose?: () => void} | null>(null);
 
-  // Auto-save logic
+  // 1. Initialization: Connect Drive and Check Versions
   useEffect(() => {
-    // Only auto-save if Drive is connected AND Sync is explicitly enabled (conflict resolved)
+      let mounted = true;
+
+      const initDrive = async () => {
+          try {
+              await initGoogleDrivePromise();
+              
+              if (!mounted) return;
+
+              const connected = isSignedIn();
+              setDriveConnected(connected);
+
+              if (connected) {
+                  const result = await checkForRemoteBackup();
+                  
+                  if (!mounted) return;
+
+                  if (result && result.exists && result.modifiedTime) {
+                      const localLastSyncStr = localStorage.getItem('last_cloud_sync');
+                      
+                      // Parse timestamps safely
+                      const cloudTime = new Date(result.modifiedTime).getTime();
+                      const localTime = localLastSyncStr ? new Date(localLastSyncStr).getTime() : 0;
+                      
+                      // If cloud is significantly newer (> 5 seconds difference)
+                      const isCloudNewer = cloudTime > localTime + 5000;
+
+                      if (isCloudNewer) {
+                          // CONFLICT: Cloud is newer. 
+                          // Action: Disable sync. Show prompt.
+                          setIsSyncEnabled(false); 
+                          
+                          setToastMessage({
+                              title: 'Доступна новая версия в облаке',
+                              actionLabel: 'Загрузить',
+                              action: async () => {
+                                  try {
+                                      setIsSyncing(true);
+                                      const data = await downloadBackup();
+                                      handleCloudRestore(data, true); // This sets skipNextSaveRef
+                                      setToastMessage(null);
+                                      setIsSyncEnabled(true); // Enable sync going forward
+                                  } catch (e) {
+                                      alert('Ошибка загрузки бэкапа');
+                                      console.error(e);
+                                  } finally {
+                                      setIsSyncing(false);
+                                  }
+                              },
+                              onClose: () => {
+                                  // User chose "Ignore" (Keep Local).
+                                  // This implies local version is now "master".
+                                  // Enable sync -> Next auto-save will overwrite cloud.
+                                  setIsSyncEnabled(true);
+                                  setToastMessage(null);
+                              }
+                          });
+                      } else {
+                          // Local is up to date or newer. Safe to sync.
+                          setIsSyncEnabled(true);
+                      }
+                  } else {
+                      // No backup exists in cloud. Safe to sync (create one).
+                      setIsSyncEnabled(true);
+                  }
+              }
+          } catch (e) {
+              console.error("Auto-sync init failed", e);
+          }
+      };
+
+      initDrive();
+      
+      return () => { mounted = false; };
+  }, [isCloudSyncOpen]); // Re-run if user opens/closes sync modal (might have logged in)
+
+  // 2. Auto-Save (Debounced)
+  useEffect(() => {
+    // CONDITIONS:
+    // 1. Must be connected
+    // 2. Sync must be enabled (passed initial checks)
+    // 3. Must NOT be a result of a download (skipNextSaveRef)
     if (!isDriveConnected || !isSyncEnabled) return;
+
+    if (skipNextSaveRef.current) {
+        skipNextSaveRef.current = false;
+        return;
+    }
 
     const autoSave = async () => {
         setIsSyncing(true);
@@ -61,80 +149,9 @@ export default function App() {
         }
     };
 
-    // Debounce: Wait 2 seconds after last change before saving
-    const timer = setTimeout(autoSave, 2000);
+    const timer = setTimeout(autoSave, 2000); // 2s debounce
     return () => clearTimeout(timer);
   }, [prompts, categories, availableTags, structures, isDriveConnected, isSyncEnabled]);
-
-  // Init Google Drive & Auto-Load Check
-  useEffect(() => {
-      let mounted = true;
-
-      const initDrive = async () => {
-          try {
-              await initGoogleDrivePromise();
-              
-              if (!mounted) return;
-
-              const connected = isSignedIn();
-              setDriveConnected(connected);
-
-              if (connected) {
-                  // Check cloud status BEFORE enabling sync
-                  const result = await checkForRemoteBackup();
-                  
-                  if (!mounted) return;
-
-                  if (result && result.exists && result.modifiedTime) {
-                      const localLastSync = localStorage.getItem('last_cloud_sync');
-                      const cloudTime = new Date(result.modifiedTime).getTime();
-                      const localTime = localLastSync ? new Date(localLastSync).getTime() : 0;
-                      
-                      // Threshold to ignore minor clock differences
-                      const isCloudNewer = cloudTime > localTime + 2000;
-
-                      if (isCloudNewer) {
-                          // Cloud is newer: Show toast, keep sync DISABLED until user decides
-                          setToastMessage({
-                              title: 'Доступна новая версия в облаке',
-                              actionLabel: 'Загрузить',
-                              action: async () => {
-                                  try {
-                                      setIsSyncing(true);
-                                      const data = await downloadBackup();
-                                      handleCloudRestore(data, true);
-                                      setToastMessage(null);
-                                      setIsSyncEnabled(true); // Enable sync after download
-                                  } catch (e) {
-                                      alert('Ошибка загрузки бэкапа');
-                                  } finally {
-                                      setIsSyncing(false);
-                                  }
-                              },
-                              onClose: () => {
-                                  // User closed toast -> "Keep Local" -> Enable sync (will overwrite cloud eventually)
-                                  setIsSyncEnabled(true);
-                                  setToastMessage(null);
-                              }
-                          });
-                      } else {
-                          // Local is up to date or newer -> Enable sync immediately
-                          setIsSyncEnabled(true);
-                      }
-                  } else {
-                      // No backup exists -> Enable sync to create one
-                      setIsSyncEnabled(true);
-                  }
-              }
-          } catch (e) {
-              console.error("Auto-sync init failed", e);
-          }
-      };
-
-      initDrive();
-      
-      return () => { mounted = false; };
-  }, [isCloudSyncOpen]); 
 
   const filteredPrompts = useMemo(() => {
     return prompts.filter(prompt => {
@@ -258,6 +275,9 @@ export default function App() {
   };
 
   const handleCloudRestore = (data: BackupData, silent = false) => {
+      // PREVENT LOOP: Set this ref BEFORE updating state
+      skipNextSaveRef.current = true;
+
       const performRestore = () => {
           if (data.prompts) setPrompts(data.prompts);
           if (data.categories) setCategories(data.categories);
@@ -271,7 +291,9 @@ export default function App() {
       } else {
           if (window.confirm(`Обнаружена резервная копия от ${new Date(data.lastUpdated).toLocaleString()}. Восстановить?`)) {
               performRestore();
-              setIsSyncEnabled(true); // Enable sync after manual restore
+              setIsSyncEnabled(true); // Explicitly enable sync after manual restore
+          } else {
+              skipNextSaveRef.current = false; // Reset if cancelled
           }
       }
   };
