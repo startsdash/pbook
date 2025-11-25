@@ -9,7 +9,7 @@ import { PromptFormModal } from './components/PromptFormModal';
 import { StructureManagerModal } from './components/StructureManagerModal';
 import { SettingsModal } from './components/SettingsModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
-import { Search, BookOpen, Plus, Layers, Download, Upload, Settings, Menu, X, Cloud, RefreshCw } from 'lucide-react';
+import { Search, BookOpen, Plus, Layers, Download, Upload, Settings, Menu, X, Cloud, RefreshCw, Loader2 } from 'lucide-react';
 import { exportPromptsToExcel, parseExcelDatabase } from './utils/fileExport';
 import { BackupData, initGoogleDrivePromise, checkForRemoteBackup, downloadBackup, isSignedIn, uploadBackup } from './services/googleDriveService';
 
@@ -34,18 +34,21 @@ export default function App() {
   // Sync States
   const [isDriveConnected, setDriveConnected] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isSyncEnabled, setIsSyncEnabled] = useState(false); // Guard: prevents auto-save until initial check is done
+  const [isSyncEnabled, setIsSyncEnabled] = useState(false); 
+  const [isInitializing, setIsInitializing] = useState(true); // Blocking load state
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const skipNextSaveRef = useRef(false); // Guard: prevents upload loops after download
+  const skipNextSaveRef = useRef(false); 
   const [toastMessage, setToastMessage] = useState<{title: string, action?: () => void, actionLabel?: string, onClose?: () => void} | null>(null);
 
-  // 1. Initialization: Connect Drive and Check Versions
+  // 1. CLOUD-FIRST INITIALIZATION
   useEffect(() => {
       let mounted = true;
 
-      const initDrive = async () => {
+      const initializeApp = async () => {
+          setIsInitializing(true);
           try {
+              // 1. Initialize Drive Client
               await initGoogleDrivePromise();
               
               if (!mounted) return;
@@ -54,68 +57,55 @@ export default function App() {
               setDriveConnected(connected);
 
               if (connected) {
-                  const result = await checkForRemoteBackup();
-                  
-                  if (!mounted) return;
-
-                  if (result && result.exists && result.modifiedTime) {
-                      const localLastSyncStr = localStorage.getItem('last_cloud_sync');
+                  // 2. Check for Cloud Backup
+                  // We MUST check this before enabling sync, because local state is volatile (RAM only).
+                  // If a backup exists, we MUST download it to restore state.
+                  try {
+                      const backupMeta = await checkForRemoteBackup();
                       
-                      // Parse timestamps safely
-                      const cloudTime = new Date(result.modifiedTime).getTime();
-                      const localTime = localLastSyncStr ? new Date(localLastSyncStr).getTime() : 0;
-                      
-                      // If cloud is significantly newer (> 5 seconds difference)
-                      const isCloudNewer = cloudTime > localTime + 5000;
-
-                      if (isCloudNewer) {
-                          // CONFLICT: Cloud is newer. 
-                          // Action: Disable sync. Show prompt.
-                          setIsSyncEnabled(false); 
+                      if (backupMeta && backupMeta.exists) {
+                          console.log("Backup found. Restoring...");
+                          // 3. Auto-Restore
+                          const data = await downloadBackup();
+                          handleCloudRestore(data, true); // Silent restore, sets skipNextSaveRef
+                          
+                          // 4. Enable Sync (Safe now)
+                          setIsSyncEnabled(true);
                           
                           setToastMessage({
-                              title: 'Доступна новая версия в облаке',
-                              actionLabel: 'Загрузить',
-                              action: async () => {
-                                  try {
-                                      setIsSyncing(true);
-                                      const data = await downloadBackup();
-                                      handleCloudRestore(data, true); // This sets skipNextSaveRef
-                                      setToastMessage(null);
-                                      setIsSyncEnabled(true); // Enable sync going forward
-                                  } catch (e) {
-                                      alert('Ошибка загрузки бэкапа');
-                                      console.error(e);
-                                  } finally {
-                                      setIsSyncing(false);
-                                  }
-                              },
-                              onClose: () => {
-                                  // User chose "Ignore" (Keep Local).
-                                  // This implies local version is now "master".
-                                  // Enable sync -> Next auto-save will overwrite cloud.
-                                  setIsSyncEnabled(true);
-                                  setToastMessage(null);
-                              }
+                              title: 'Данные восстановлены из облака',
+                              onClose: () => setToastMessage(null)
                           });
                       } else {
-                          // Local is up to date or newer. Safe to sync.
+                          console.log("No backup found. Starting fresh.");
+                          // No backup = New user or empty Drive. Safe to enable sync for new creations.
                           setIsSyncEnabled(true);
                       }
-                  } else {
-                      // No backup exists in cloud. Safe to sync (create one).
-                      setIsSyncEnabled(true);
+                  } catch (err) {
+                      console.error("Failed to check/restore backup:", err);
+                      // CRITICAL: If check fails (e.g. network), DO NOT enable sync.
+                      // Otherwise we might overwrite the cloud backup with empty local data when connection returns.
+                      setIsSyncEnabled(false);
+                      setToastMessage({
+                          title: 'Ошибка синхронизации. Авто-сохранение отключено.',
+                          onClose: () => setToastMessage(null)
+                      });
                   }
+              } else {
+                  // Not connected. Just work locally.
+                  setIsSyncEnabled(false);
               }
           } catch (e) {
-              console.error("Auto-sync init failed", e);
+              console.error("App Initialization Error", e);
+          } finally {
+              if (mounted) setIsInitializing(false);
           }
       };
 
-      initDrive();
+      initializeApp();
       
       return () => { mounted = false; };
-  }, [isCloudSyncOpen]); // Re-run if user opens/closes sync modal (might have logged in)
+  }, [isCloudSyncOpen]); // Re-run if user manually logs in via modal
 
   // 2. Auto-Save (Debounced)
   useEffect(() => {
@@ -126,6 +116,7 @@ export default function App() {
     if (!isDriveConnected || !isSyncEnabled) return;
 
     if (skipNextSaveRef.current) {
+        // Reset flag and skip this effect execution
         skipNextSaveRef.current = false;
         return;
     }
@@ -144,6 +135,7 @@ export default function App() {
             localStorage.setItem('last_cloud_sync', now);
         } catch (e) {
             console.error("Auto-save failed", e);
+            // Optionally disable sync if auth fails repeatedly?
         } finally {
             setIsSyncing(false);
         }
@@ -297,6 +289,16 @@ export default function App() {
           }
       }
   };
+
+  if (isInitializing) {
+      return (
+          <div className="flex items-center justify-center h-screen w-screen bg-slate-950 text-slate-100 flex-col gap-4">
+              <Loader2 size={48} className="animate-spin text-indigo-500" />
+              <div className="text-lg font-medium">Загрузка Prompt Book...</div>
+              <div className="text-sm text-slate-500">Синхронизация с облаком</div>
+          </div>
+      );
+  }
 
   return (
     <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden">

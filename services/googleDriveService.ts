@@ -1,3 +1,4 @@
+
 import { Prompt, Structure } from '../types';
 
 // TypeScript declarations for Google API globals
@@ -95,7 +96,7 @@ export const isDriveConfigured = (): boolean => {
 };
 
 export const initGoogleDrivePromise = (): Promise<void> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         if (!isDriveConfigured()) {
             console.warn("Google Drive Sync: CLIENT_ID or API_KEY missing.");
             resolve();
@@ -119,7 +120,7 @@ export const initGoogleDrivePromise = (): Promise<void> => {
             script.onload = onLoad;
             script.onerror = () => {
                 console.error(`Failed to load script: ${src}`);
-                resolve(); 
+                resolve(); // Non-fatal, just sync won't work
             };
             document.body.appendChild(script);
         };
@@ -150,7 +151,7 @@ export const initGoogleDrivePromise = (): Promise<void> => {
                             
                             isInitialized = true;
                             // Attempt to restore session without prompting
-                            const restored = restoreSession();
+                            restoreSession();
                             resolve();
                         } catch (e) {
                             console.error("GIS Init Error:", e);
@@ -218,15 +219,13 @@ export const ensureValidToken = async (): Promise<void> => {
                 // Temporarily override callback for this specific request
                 tokenClient.callback = (resp: any) => {
                      if (resp.error) {
+                         refreshPromise = null;
                          reject(resp);
                      } else {
                          saveToken(resp);
+                         refreshPromise = null;
                          resolve();
                      }
-                     // Reset callback for normal flows? 
-                     // Actually GIS doesn't support easy callback resetting, 
-                     // but saving the token globally handles it.
-                     refreshPromise = null;
                 };
                 
                 // Silent refresh
@@ -297,28 +296,23 @@ const isDriveApiReady = () => {
 };
 
 const findBackupFile = async (): Promise<DriveFile | null> => {
-    if (!isDriveApiReady()) return null;
+    if (!isDriveApiReady()) throw new Error("Drive API not ready");
     await ensureValidToken();
     
-    try {
-        const response = await window.gapi.client.drive.files.list({
-            q: `name = '${BACKUP_FILENAME}' and trashed = false`,
-            fields: 'files(id, name, modifiedTime)',
-            spaces: 'drive',
-        });
-        const files = response.result.files;
-        return (files && files.length > 0) ? files[0] as DriveFile : null;
-    } catch (err) {
-        console.error("Error finding file:", err);
-        return null;
-    }
+    // We throw error here if API call fails so caller knows it's an error, not just "not found"
+    const response = await window.gapi.client.drive.files.list({
+        q: `name = '${BACKUP_FILENAME}' and trashed = false`,
+        fields: 'files(id, name, modifiedTime)',
+        spaces: 'drive',
+    });
+    const files = response.result.files;
+    return (files && files.length > 0) ? files[0] as DriveFile : null;
 };
 
 export const uploadBackup = async (data: BackupData): Promise<string> => {
     if (!isDriveApiReady()) throw new Error("Not connected to Drive");
     await ensureValidToken();
 
-    // Clean data before upload to remove UI-specific states if any
     const fileContent = JSON.stringify(data, null, 2);
     const file = new Blob([fileContent], { type: 'application/json' });
     const metadata = {
@@ -326,7 +320,13 @@ export const uploadBackup = async (data: BackupData): Promise<string> => {
         mimeType: 'application/json',
     };
 
-    const existingFile = await findBackupFile();
+    let existingFile = null;
+    try {
+        existingFile = await findBackupFile();
+    } catch (e) {
+        console.warn("Could not check for existing file, creating new one.", e);
+    }
+
     const accessToken = getAccessToken();
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -364,7 +364,6 @@ export const downloadBackup = async (): Promise<BackupData> => {
         alt: 'media',
     });
 
-    // Ensure we parse correctly
     let result = response.result;
     if (typeof result === 'string') {
         try {
@@ -378,18 +377,19 @@ export const downloadBackup = async (): Promise<BackupData> => {
 };
 
 export const getBackupMetadata = async (): Promise<string | null> => {
-    const file = await findBackupFile();
-    return file ? (file.modifiedTime || null) : null;
+    try {
+        const file = await findBackupFile();
+        return file ? (file.modifiedTime || null) : null;
+    } catch (e) {
+        return null;
+    }
 };
 
 export const checkForRemoteBackup = async (): Promise<{ exists: boolean, modifiedTime?: string } | null> => {
-    try {
-        const file = await findBackupFile();
-        if (file) {
-            return { exists: true, modifiedTime: file.modifiedTime };
-        }
-    } catch (e) {
-        // Silently fail for auto-checks
+    // This allows errors to propagate so App.tsx knows sync is broken
+    const file = await findBackupFile();
+    if (file) {
+        return { exists: true, modifiedTime: file.modifiedTime };
     }
     return { exists: false };
 };
