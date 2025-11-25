@@ -170,8 +170,6 @@ export const initGoogleDrivePromise = (): Promise<void> => {
 const tryRestoreSession = () => {
     try {
         const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-        // We don't strictly check expiry here for the initial load state,
-        // we'll rely on ensureValidToken() before actual calls.
         if (savedToken && window.gapi && window.gapi.client) {
             window.gapi.client.setToken({ access_token: savedToken });
             localStorage.setItem('gdrive_connected', 'true');
@@ -194,7 +192,23 @@ const saveToken = (tokenResponse: any) => {
 // --- Auth Methods ---
 
 export const ensureValidToken = async (): Promise<void> => {
-    if (!tokenClient) return;
+    if (!tokenClient) {
+        if (isInitialized && window.google) {
+            // Re-init client if it's missing but we are initialized (rare edge case)
+             tokenClient = window.google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPES,
+                callback: (tokenResponse: any) => {
+                     if (tokenResponse && tokenResponse.access_token) {
+                        saveToken(tokenResponse);
+                        if (refreshResolver) { refreshResolver(); refreshResolver = null; }
+                    }
+                },
+            });
+        } else {
+            return;
+        }
+    }
 
     const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
     const now = Date.now();

@@ -31,26 +31,29 @@ export default function App() {
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDriveConnected, setDriveConnected] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false); // New syncing state
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncEnabled, setIsSyncEnabled] = useState(false); // New flag to prevent initial overwrite
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [toastMessage, setToastMessage] = useState<{title: string, action?: () => void, actionLabel?: string} | null>(null);
+  const [toastMessage, setToastMessage] = useState<{title: string, action?: () => void, actionLabel?: string, onClose?: () => void} | null>(null);
 
   // Auto-save logic
   useEffect(() => {
-    if (!isDriveConnected) return;
+    // Only auto-save if Drive is connected AND Sync is explicitly enabled (conflict resolved)
+    if (!isDriveConnected || !isSyncEnabled) return;
 
     const autoSave = async () => {
         setIsSyncing(true);
         try {
+            const now = new Date().toISOString();
             await uploadBackup({
                 prompts,
                 categories,
                 tags: availableTags,
                 structures,
-                lastUpdated: new Date().toISOString()
+                lastUpdated: now
             });
-            localStorage.setItem('last_cloud_sync', new Date().toISOString());
+            localStorage.setItem('last_cloud_sync', now);
         } catch (e) {
             console.error("Auto-save failed", e);
         } finally {
@@ -61,9 +64,9 @@ export default function App() {
     // Debounce: Wait 2 seconds after last change before saving
     const timer = setTimeout(autoSave, 2000);
     return () => clearTimeout(timer);
-  }, [prompts, categories, availableTags, structures, isDriveConnected]);
+  }, [prompts, categories, availableTags, structures, isDriveConnected, isSyncEnabled]);
 
-  // Init Google Drive & Auto-Load
+  // Init Google Drive & Auto-Load Check
   useEffect(() => {
       let mounted = true;
 
@@ -77,6 +80,7 @@ export default function App() {
               setDriveConnected(connected);
 
               if (connected) {
+                  // Check cloud status BEFORE enabling sync
                   const result = await checkForRemoteBackup();
                   
                   if (!mounted) return;
@@ -85,12 +89,12 @@ export default function App() {
                       const localLastSync = localStorage.getItem('last_cloud_sync');
                       const cloudTime = new Date(result.modifiedTime).getTime();
                       const localTime = localLastSync ? new Date(localLastSync).getTime() : 0;
+                      
+                      // Threshold to ignore minor clock differences
+                      const isCloudNewer = cloudTime > localTime + 2000;
 
-                      // If we have a fresh install (default data) and cloud has data -> Auto Load
-                      // Check if current prompts equal initial prompts roughly
-                      const isDefaultState = prompts === INITIAL_PROMPTS; // Simplified check
-
-                      if (isDefaultState || cloudTime > localTime + 60000) {
+                      if (isCloudNewer) {
+                          // Cloud is newer: Show toast, keep sync DISABLED until user decides
                           setToastMessage({
                               title: 'Доступна новая версия в облаке',
                               actionLabel: 'Загрузить',
@@ -100,14 +104,26 @@ export default function App() {
                                       const data = await downloadBackup();
                                       handleCloudRestore(data, true);
                                       setToastMessage(null);
+                                      setIsSyncEnabled(true); // Enable sync after download
                                   } catch (e) {
                                       alert('Ошибка загрузки бэкапа');
                                   } finally {
                                       setIsSyncing(false);
                                   }
+                              },
+                              onClose: () => {
+                                  // User closed toast -> "Keep Local" -> Enable sync (will overwrite cloud eventually)
+                                  setIsSyncEnabled(true);
+                                  setToastMessage(null);
                               }
                           });
+                      } else {
+                          // Local is up to date or newer -> Enable sync immediately
+                          setIsSyncEnabled(true);
                       }
+                  } else {
+                      // No backup exists -> Enable sync to create one
+                      setIsSyncEnabled(true);
                   }
               }
           } catch (e) {
@@ -255,6 +271,7 @@ export default function App() {
       } else {
           if (window.confirm(`Обнаружена резервная копия от ${new Date(data.lastUpdated).toLocaleString()}. Восстановить?`)) {
               performRestore();
+              setIsSyncEnabled(true); // Enable sync after manual restore
           }
       }
   };
@@ -281,7 +298,7 @@ export default function App() {
                       {toastMessage.actionLabel}
                   </button>
               )}
-              <button onClick={() => setToastMessage(null)} className="text-slate-500 hover:text-white ml-1">
+              <button onClick={() => toastMessage.onClose ? toastMessage.onClose() : setToastMessage(null)} className="text-slate-500 hover:text-white ml-1">
                   <X size={16} />
               </button>
           </div>
@@ -325,9 +342,9 @@ export default function App() {
         <div className="p-4 border-t border-slate-800 space-y-3 pb-8 md:pb-4">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">База данных</div>
             <button onClick={() => { setIsCloudSyncOpen(true); setIsMobileMenuOpen(false); }} className="w-full flex items-center justify-center gap-2 bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-sm text-slate-300 hover:text-white group relative">
-                {isSyncing ? <RefreshCw size={18} className="text-blue-500 animate-spin" /> : <Cloud size={18} className="text-blue-500 group-hover:text-blue-400" />}
+                {isSyncing ? <RefreshCw size={18} className="text-blue-500 animate-spin" /> : <Cloud size={18} className={`text-blue-500 group-hover:text-blue-400 ${!isSyncEnabled && isDriveConnected ? 'opacity-50' : ''}`} />}
                 Google Drive
-                {isDriveConnected && !isSyncing && <div className="absolute top-3 right-3 w-2 h-2 bg-green-500 rounded-full"></div>}
+                {isDriveConnected && !isSyncing && <div className={`absolute top-3 right-3 w-2 h-2 rounded-full ${isSyncEnabled ? 'bg-green-500' : 'bg-amber-500'}`}></div>}
             </button>
             <div className="grid grid-cols-2 gap-2">
                 <button onClick={handleExportDatabase} className="flex flex-col items-center justify-center gap-1 bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800 p-3 rounded-lg transition-all text-xs text-slate-400 hover:text-white active:bg-slate-800">
@@ -354,7 +371,7 @@ export default function App() {
             <div className="flex gap-2">
                 <button onClick={() => setIsCloudSyncOpen(true)} className="text-slate-400 p-2 rounded-full hover:bg-slate-800 relative">
                     {isSyncing ? <RefreshCw size={22} className="animate-spin text-blue-500"/> : <Cloud size={22} />}
-                    {isDriveConnected && !isSyncing && <div className="absolute top-2 right-2 w-2 h-2 bg-green-500 rounded-full border border-slate-950"></div>}
+                    {isDriveConnected && !isSyncing && <div className={`absolute top-2 right-2 w-2 h-2 rounded-full border border-slate-950 ${isSyncEnabled ? 'bg-green-500' : 'bg-amber-500'}`}></div>}
                 </button>
             </div>
         </div>
