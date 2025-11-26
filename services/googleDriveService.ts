@@ -160,8 +160,9 @@ export const initGoogleDrivePromise = (): Promise<void> => {
                                     client_id: CLIENT_ID,
                                     scope: SCOPES,
                                     ux_mode: 'popup',
-                                    // @ts-ignore - 'prompt' is critical for getting refresh_token
-                                    prompt: 'consent', 
+                                    // @ts-ignore - 'prompt' and 'access_type' are critical for getting refresh_token
+                                    prompt: 'consent',
+                                    access_type: 'offline', 
                                     callback: (response: any) => {
                                         if (response.code) {
                                             exchangeCodeForToken(response.code);
@@ -232,6 +233,7 @@ const saveToken = (tokenResponse: any, refreshToken?: string) => {
         }
     }
     if (refreshToken) {
+        console.log("Saving new refresh token");
         localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
     }
 };
@@ -285,7 +287,8 @@ const refreshAccessToken = async (): Promise<void> => {
 
     const data = await response.json();
     if (data.access_token) {
-        saveToken(data, data.refresh_token); // data.refresh_token might be new or empty
+        // data.refresh_token is usually undefined here unless rotated
+        saveToken(data, data.refresh_token); 
     } else {
         // If refresh failed (e.g. revoked), clear storage
         if (data.error === 'invalid_grant' || data.error === 'unauthorized_client') {
@@ -331,7 +334,7 @@ export const ensureValidToken = async (): Promise<void> => {
 
             // 4. Fallback to Silent Refresh (Implicit Flow) - works only if 3rd party cookies allowed
             if (tokenClient) {
-                console.log("Attempting silent implicit refresh...");
+                console.log("Attempting silent implicit refresh (fallback)...");
                 // Temporarily override callback
                 const originalCallback = tokenClient.callback;
                 tokenClient.callback = (resp: any) => {
@@ -366,6 +369,7 @@ export const handleAuthClick = () => {
         // Code flow with explicit 'consent' prompt ensures we get a refresh_token
         codeClient.requestCode();
     } else if (tokenClient) {
+        console.warn("CLIENT_SECRET missing: Falling back to Implicit Flow (1 hour session only).");
         // Fallback to Implicit Flow
         tokenClient.requestAccessToken({ prompt: 'consent' });
     } else {
