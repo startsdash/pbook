@@ -21,7 +21,10 @@ const getClientId = () => {
     return import.meta.env.VITE_GOOGLE_CLIENT_ID;
   }
   if (typeof process !== 'undefined' && process.env) {
-    return process.env.REACT_APP_GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+    // Explicitly check strict prefixes for CRA/Next.js/etc
+    if (process.env.REACT_APP_GOOGLE_CLIENT_ID) return process.env.REACT_APP_GOOGLE_CLIENT_ID;
+    if (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (process.env.GOOGLE_CLIENT_ID) return process.env.GOOGLE_CLIENT_ID;
   }
   return '';
 };
@@ -33,7 +36,9 @@ const getApiKey = () => {
     return import.meta.env.VITE_GOOGLE_API_KEY;
   }
   if (typeof process !== 'undefined' && process.env) {
-    return process.env.REACT_APP_GOOGLE_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_API_KEY || process.env.GOOGLE_API_KEY;
+    if (process.env.REACT_APP_GOOGLE_API_KEY) return process.env.REACT_APP_GOOGLE_API_KEY;
+    if (process.env.NEXT_PUBLIC_GOOGLE_API_KEY) return process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+    if (process.env.GOOGLE_API_KEY) return process.env.GOOGLE_API_KEY;
   }
   return '';
 };
@@ -45,7 +50,9 @@ const getClientSecret = () => {
     return import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
   }
   if (typeof process !== 'undefined' && process.env) {
-    return process.env.REACT_APP_GOOGLE_CLIENT_SECRET || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+    if (process.env.REACT_APP_GOOGLE_CLIENT_SECRET) return process.env.REACT_APP_GOOGLE_CLIENT_SECRET;
+    if (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_SECRET) return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_SECRET;
+    if (process.env.GOOGLE_CLIENT_SECRET) return process.env.GOOGLE_CLIENT_SECRET;
   }
   return '';
 };
@@ -238,7 +245,8 @@ const exchangeCodeForToken = async (code: string) => {
         params.append('client_secret', CLIENT_SECRET);
         params.append('code', code);
         params.append('grant_type', 'authorization_code');
-        params.append('redirect_uri', window.location.origin);
+        // CRITICAL FIX: For ux_mode: 'popup', redirect_uri MUST be 'postmessage'
+        params.append('redirect_uri', 'postmessage');
 
         const response = await fetch('https://oauth2.googleapis.com/token', {
             method: 'POST',
