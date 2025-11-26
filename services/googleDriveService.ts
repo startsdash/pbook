@@ -11,32 +11,51 @@ declare global {
 
 // --- Configuration & Helpers ---
 
-const getEnvVar = (key: string): string => {
-  let value = '';
-  try {
+// CRITICAL FIX: Bundlers (Vite, Webpack) only replace environment variables that are EXPLICITLY typed out.
+// Dynamic access like process.env[key] or import.meta.env[key] often resolves to undefined in production.
+
+const getClientId = () => {
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GOOGLE_CLIENT_ID) {
     // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[`VITE_${key}`]) {
-      // @ts-ignore
-      return import.meta.env[`VITE_${key}`];
-    }
-  } catch (e) {}
-
-  try {
-    if (typeof process !== 'undefined' && process.env) {
-      const prefixes = ['VITE_', 'REACT_APP_', 'NEXT_PUBLIC_', ''];
-      for (const prefix of prefixes) {
-        const fullKey = `${prefix}${key}`;
-        if (process.env[fullKey]) return process.env[fullKey] as string;
-      }
-    }
-  } catch (e) {}
-
-  return value;
+    return import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  }
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env.REACT_APP_GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+  }
+  return '';
 };
 
-const CLIENT_ID = getEnvVar('GOOGLE_CLIENT_ID');
-const API_KEY = getEnvVar('GOOGLE_API_KEY');
-const CLIENT_SECRET = getEnvVar('GOOGLE_CLIENT_SECRET');
+const getApiKey = () => {
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GOOGLE_API_KEY) {
+    // @ts-ignore
+    return import.meta.env.VITE_GOOGLE_API_KEY;
+  }
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env.REACT_APP_GOOGLE_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_API_KEY || process.env.GOOGLE_API_KEY;
+  }
+  return '';
+};
+
+const getClientSecret = () => {
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GOOGLE_CLIENT_SECRET) {
+    // @ts-ignore
+    return import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
+  }
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env.REACT_APP_GOOGLE_CLIENT_SECRET || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+  }
+  return '';
+};
+
+const CLIENT_ID = getClientId();
+const API_KEY = getApiKey();
+const CLIENT_SECRET = getClientSecret();
+
+// Debug logs to verify keys are present (safe length check only)
+console.log(`Drive Config: ID=${CLIENT_ID ? 'OK' : 'MISSING'}, API=${API_KEY ? 'OK' : 'MISSING'}, SECRET=${CLIENT_SECRET ? 'OK' : 'MISSING (Implicit Flow Only)'}`);
 
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
@@ -134,6 +153,8 @@ export const initGoogleDrivePromise = (): Promise<void> => {
                                     client_id: CLIENT_ID,
                                     scope: SCOPES,
                                     ux_mode: 'popup',
+                                    // @ts-ignore - 'prompt' is critical for getting refresh_token
+                                    prompt: 'consent', 
                                     callback: (response: any) => {
                                         if (response.code) {
                                             exchangeCodeForToken(response.code);
@@ -259,7 +280,8 @@ const refreshAccessToken = async (): Promise<void> => {
         saveToken(data, data.refresh_token); // data.refresh_token might be new or empty
     } else {
         // If refresh failed (e.g. revoked), clear storage
-        if (data.error === 'invalid_grant') {
+        if (data.error === 'invalid_grant' || data.error === 'unauthorized_client') {
+            console.warn("Refresh token invalid, logging out.");
             signOut();
         }
         throw new Error(data.error_description || "Refresh failed");
@@ -292,7 +314,7 @@ export const ensureValidToken = async (): Promise<void> => {
             // 3. Try Refresh Token Flow first (Preferred)
             const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
             if (refreshToken && CLIENT_SECRET) {
-                console.log("Refreshing access token...");
+                console.log("Refreshing access token via Refresh Token...");
                 await refreshAccessToken();
                 refreshPromise = null;
                 resolve();
@@ -333,12 +355,13 @@ export const ensureValidToken = async (): Promise<void> => {
 export const handleAuthClick = () => {
     // Prefer Code Flow if Secret is available (supports Refresh Tokens)
     if (codeClient && CLIENT_SECRET) {
+        // Code flow with explicit 'consent' prompt ensures we get a refresh_token
         codeClient.requestCode();
     } else if (tokenClient) {
         // Fallback to Implicit Flow
         tokenClient.requestAccessToken({ prompt: 'consent' });
     } else {
-        console.error("Auth client not initialized");
+        console.error("Auth client not initialized. Check your API Keys.");
     }
 };
 
