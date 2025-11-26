@@ -11,66 +11,44 @@ declare global {
 
 // --- Configuration & Helpers ---
 
-const getClientId = (): string => {
-  let key = '';
+const getEnvVar = (key: string): string => {
+  let value = '';
   try {
     // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GOOGLE_CLIENT_ID) {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[`VITE_${key}`]) {
       // @ts-ignore
-      key = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      return import.meta.env[`VITE_${key}`];
     }
   } catch (e) {}
-
-  if (key) return key;
 
   try {
     if (typeof process !== 'undefined' && process.env) {
-      if (process.env.VITE_GOOGLE_CLIENT_ID) return process.env.VITE_GOOGLE_CLIENT_ID;
-      if (process.env.REACT_APP_GOOGLE_CLIENT_ID) return process.env.REACT_APP_GOOGLE_CLIENT_ID;
-      if (process.env.GOOGLE_CLIENT_ID) return process.env.GOOGLE_CLIENT_ID;
-      if (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+      const prefixes = ['VITE_', 'REACT_APP_', 'NEXT_PUBLIC_', ''];
+      for (const prefix of prefixes) {
+        const fullKey = `${prefix}${key}`;
+        if (process.env[fullKey]) return process.env[fullKey] as string;
+      }
     }
   } catch (e) {}
 
-  return '';
+  return value;
 };
 
-const getApiKey = (): string => {
-  let key = '';
-  try {
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GOOGLE_API_KEY) {
-      // @ts-ignore
-      key = import.meta.env.VITE_GOOGLE_API_KEY;
-    }
-  } catch (e) {}
-
-  if (key) return key;
-
-  try {
-    if (typeof process !== 'undefined' && process.env) {
-      if (process.env.VITE_GOOGLE_API_KEY) return process.env.VITE_GOOGLE_API_KEY;
-      if (process.env.REACT_APP_GOOGLE_API_KEY) return process.env.REACT_APP_GOOGLE_API_KEY;
-      if (process.env.GOOGLE_API_KEY) return process.env.GOOGLE_API_KEY;
-      if (process.env.NEXT_PUBLIC_GOOGLE_API_KEY) return process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
-    }
-  } catch (e) {}
-
-  return '';
-};
-
-const CLIENT_ID = getClientId();
-const API_KEY = getApiKey();
+const CLIENT_ID = getEnvVar('GOOGLE_CLIENT_ID');
+const API_KEY = getEnvVar('GOOGLE_API_KEY');
+const CLIENT_SECRET = getEnvVar('GOOGLE_CLIENT_SECRET');
 
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const BACKUP_FILENAME = 'prompt_book_backup.json';
+
 const TOKEN_STORAGE_KEY = 'gdrive_access_token';
 const TOKEN_EXPIRY_KEY = 'gdrive_token_expiry';
+const REFRESH_TOKEN_KEY = 'gdrive_refresh_token';
 
-let tokenClient: any;
+let tokenClient: any; // For Implicit Flow (fallback)
+let codeClient: any;  // For Auth Code Flow (Refresh Token)
 let isInitialized = false;
-// Queue for token refresh promises to prevent parallel refresh requests
 let refreshPromise: Promise<void> | null = null;
 
 // --- Interfaces ---
@@ -120,7 +98,7 @@ export const initGoogleDrivePromise = (): Promise<void> => {
             script.onload = onLoad;
             script.onerror = () => {
                 console.error(`Failed to load script: ${src}`);
-                resolve(); // Non-fatal, just sync won't work
+                resolve();
             };
             document.body.appendChild(script);
         };
@@ -139,6 +117,7 @@ export const initGoogleDrivePromise = (): Promise<void> => {
                         if (!window.google || !window.google.accounts) { resolve(); return; }
 
                         try {
+                            // Initialize standard Token Client (Implicit Flow) as fallback
                             tokenClient = window.google.accounts.oauth2.initTokenClient({
                                 client_id: CLIENT_ID,
                                 scope: SCOPES,
@@ -148,6 +127,20 @@ export const initGoogleDrivePromise = (): Promise<void> => {
                                     }
                                 },
                             });
+
+                            // Initialize Code Client (Auth Code Flow) if Secret is present
+                            if (CLIENT_SECRET) {
+                                codeClient = window.google.accounts.oauth2.initCodeClient({
+                                    client_id: CLIENT_ID,
+                                    scope: SCOPES,
+                                    ux_mode: 'popup',
+                                    callback: (response: any) => {
+                                        if (response.code) {
+                                            exchangeCodeForToken(response.code);
+                                        }
+                                    },
+                                });
+                            }
                             
                             isInitialized = true;
                             // Attempt to restore session without prompting
@@ -173,10 +166,10 @@ const restoreSession = (): boolean => {
         const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
         const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
         
+        // If we have a valid access token loaded in GAPI, we are good
         if (savedToken && expiry) {
             const now = Date.now();
-            // If token is valid (with 5 min buffer), set it
-            if (now < parseInt(expiry) - 300000) {
+            if (now < parseInt(expiry) - 60000) { // 1 min buffer
                 if (window.gapi && window.gapi.client) {
                     window.gapi.client.setToken({ access_token: savedToken });
                     localStorage.setItem('gdrive_connected', 'true');
@@ -184,6 +177,13 @@ const restoreSession = (): boolean => {
                 }
             }
         }
+        // If access token expired but we have refresh token, ensureValidToken will handle it later
+        const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+        if (refreshToken) {
+             localStorage.setItem('gdrive_connected', 'true');
+             return true;
+        }
+
         return false;
     } catch (e) {
         console.error("Session restore error", e);
@@ -191,33 +191,121 @@ const restoreSession = (): boolean => {
     }
 };
 
-const saveToken = (tokenResponse: any) => {
+const saveToken = (tokenResponse: any, refreshToken?: string) => {
     if (tokenResponse.access_token) {
         const expiresIn = tokenResponse.expires_in || 3599;
         const expiryTime = Date.now() + (expiresIn * 1000);
         localStorage.setItem(TOKEN_STORAGE_KEY, tokenResponse.access_token);
         localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
         localStorage.setItem('gdrive_connected', 'true');
+        
+        if (window.gapi && window.gapi.client) {
+            window.gapi.client.setToken({ access_token: tokenResponse.access_token });
+        }
+    }
+    if (refreshToken) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+    }
+};
+
+// --- Auth Code Flow Exchange ---
+
+const exchangeCodeForToken = async (code: string) => {
+    try {
+        const params = new URLSearchParams();
+        params.append('client_id', CLIENT_ID);
+        params.append('client_secret', CLIENT_SECRET);
+        params.append('code', code);
+        params.append('grant_type', 'authorization_code');
+        params.append('redirect_uri', window.location.origin);
+
+        const response = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params
+        });
+
+        const data = await response.json();
+        if (data.access_token) {
+            saveToken(data, data.refresh_token);
+        } else {
+            console.error("Failed to exchange code", data);
+        }
+    } catch (e) {
+        console.error("Token exchange error", e);
+    }
+};
+
+const refreshAccessToken = async (): Promise<void> => {
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+    if (!refreshToken || !CLIENT_SECRET) {
+        throw new Error("No refresh token or client secret available");
+    }
+
+    const params = new URLSearchParams();
+    params.append('client_id', CLIENT_ID);
+    params.append('client_secret', CLIENT_SECRET);
+    params.append('refresh_token', refreshToken);
+    params.append('grant_type', 'refresh_token');
+
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
+    });
+
+    const data = await response.json();
+    if (data.access_token) {
+        saveToken(data, data.refresh_token); // data.refresh_token might be new or empty
+    } else {
+        // If refresh failed (e.g. revoked), clear storage
+        if (data.error === 'invalid_grant') {
+            signOut();
+        }
+        throw new Error(data.error_description || "Refresh failed");
     }
 };
 
 // --- Auth Methods ---
 
 export const ensureValidToken = async (): Promise<void> => {
-    if (!tokenClient) return Promise.reject("Google Auth not initialized");
-
+    // 1. Check if we have a valid Access Token currently
     const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
     const now = Date.now();
     
-    // Check if expired or expiring soon (5 min buffer)
-    if (!expiry || now > parseInt(expiry) - 300000) {
-        // Prevent multiple simultaneous refresh requests
-        if (refreshPromise) return refreshPromise;
+    // Valid if expiry exists and is in the future (> 5 min buffer)
+    const isValid = expiry && (now < parseInt(expiry) - 300000);
 
-        refreshPromise = new Promise((resolve, reject) => {
-            try {
-                // Temporarily override callback for this specific request
+    if (isValid) {
+        const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+        if (savedToken && window.gapi && window.gapi.client && !window.gapi.client.getToken()) {
+            window.gapi.client.setToken({ access_token: savedToken });
+        }
+        return Promise.resolve();
+    }
+
+    // 2. Prevent multiple simultaneous refresh requests
+    if (refreshPromise) return refreshPromise;
+
+    refreshPromise = new Promise(async (resolve, reject) => {
+        try {
+            // 3. Try Refresh Token Flow first (Preferred)
+            const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+            if (refreshToken && CLIENT_SECRET) {
+                console.log("Refreshing access token...");
+                await refreshAccessToken();
+                refreshPromise = null;
+                resolve();
+                return;
+            }
+
+            // 4. Fallback to Silent Refresh (Implicit Flow) - works only if 3rd party cookies allowed
+            if (tokenClient) {
+                console.log("Attempting silent implicit refresh...");
+                // Temporarily override callback
+                const originalCallback = tokenClient.callback;
                 tokenClient.callback = (resp: any) => {
+                     tokenClient.callback = originalCallback; // Restore
                      if (resp.error) {
                          refreshPromise = null;
                          reject(resp);
@@ -227,34 +315,30 @@ export const ensureValidToken = async (): Promise<void> => {
                          resolve();
                      }
                 };
-                
-                // Silent refresh
-                tokenClient.requestAccessToken({ prompt: '' });
-            } catch (e) {
+                tokenClient.requestAccessToken({ prompt: 'none' });
+            } else {
                 refreshPromise = null;
-                reject(e);
+                reject("Auth not initialized");
             }
-        });
-        
-        return refreshPromise;
-    }
+        } catch (e) {
+            console.error("Token refresh failed", e);
+            refreshPromise = null;
+            reject(e);
+        }
+    });
     
-    // Ensure GAPI has the token set
-    const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (savedToken && window.gapi && window.gapi.client && !window.gapi.client.getToken()) {
-        window.gapi.client.setToken({ access_token: savedToken });
-    }
-
-    return Promise.resolve();
+    return refreshPromise;
 };
 
 export const handleAuthClick = () => {
-    if (tokenClient) {
-        // We use the default callback defined in init
-        tokenClient.callback = (resp: any) => {
-            if (resp.access_token) saveToken(resp);
-        };
+    // Prefer Code Flow if Secret is available (supports Refresh Tokens)
+    if (codeClient && CLIENT_SECRET) {
+        codeClient.requestCode();
+    } else if (tokenClient) {
+        // Fallback to Implicit Flow
         tokenClient.requestAccessToken({ prompt: 'consent' });
+    } else {
+        console.error("Auth client not initialized");
     }
 };
 
@@ -269,6 +353,7 @@ export const signOut = () => {
         }
         localStorage.removeItem(TOKEN_STORAGE_KEY);
         localStorage.removeItem(TOKEN_EXPIRY_KEY);
+        localStorage.removeItem(REFRESH_TOKEN_KEY);
         localStorage.removeItem('gdrive_connected');
     } catch (e) {
         console.error("Sign out error", e);
@@ -283,10 +368,13 @@ export const getAccessToken = (): string | null => {
 };
 
 export const isSignedIn = (): boolean => {
+    // Consider signed in if we have a valid access token OR a refresh token
     const token = getAccessToken();
     const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
-    if (!token || !expiry) return false;
-    return Date.now() < parseInt(expiry);
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+    
+    const isAccessValid = !!(token && expiry && Date.now() < parseInt(expiry));
+    return isAccessValid || !!refreshToken;
 };
 
 // --- Drive API Operations ---
@@ -299,7 +387,6 @@ const findBackupFile = async (): Promise<DriveFile | null> => {
     if (!isDriveApiReady()) throw new Error("Drive API not ready");
     await ensureValidToken();
     
-    // We throw error here if API call fails so caller knows it's an error, not just "not found"
     const response = await window.gapi.client.drive.files.list({
         q: `name = '${BACKUP_FILENAME}' and trashed = false`,
         fields: 'files(id, name, modifiedTime)',
@@ -386,7 +473,6 @@ export const getBackupMetadata = async (): Promise<string | null> => {
 };
 
 export const checkForRemoteBackup = async (): Promise<{ exists: boolean, modifiedTime?: string } | null> => {
-    // This allows errors to propagate so App.tsx knows sync is broken
     const file = await findBackupFile();
     if (file) {
         return { exists: true, modifiedTime: file.modifiedTime };
