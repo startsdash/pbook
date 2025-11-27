@@ -173,7 +173,10 @@ export default function App() {
   };
 
   const handleSavePrompt = (promptData: Prompt) => {
-    if (editingPrompt) {
+    // Determine if we should update or create based on ID existence in current list
+    const promptExists = prompts.some(p => p.id === promptData.id);
+
+    if (promptExists) {
         setPrompts(prev => prev.map(p => p.id === promptData.id ? promptData : p));
     } else {
         setPrompts(prev => [promptData, ...prev]);

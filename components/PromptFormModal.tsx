@@ -37,7 +37,10 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
 
   useEffect(() => {
     if (initialData) {
-      setFormData({ ...initialData });
+      // If id is empty (Template mode), generate a new one
+      const effectiveId = initialData.id || Date.now().toString();
+      setFormData({ ...initialData, id: effectiveId });
+      
       setTagInput(initialData.tags.join(', '));
       setLocalComponents(initialData.components || []);
       setSelectedStructureId(initialData.structureId || '');
