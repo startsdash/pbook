@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Prompt, Structure, PromptComponent, TargetType, VerificationStatus } from '../types';
-import { X, Save, Plus, GripVertical, Trash2, Copy, Sparkles, Cpu, User, CheckCircle2, Clock } from 'lucide-react';
+import { X, Save, Plus, GripVertical, Trash2, Copy, Sparkles, Cpu, User, CheckCircle2, Clock, LayoutTemplate } from 'lucide-react';
 import { assemblePromptWithAI } from '../services/geminiService';
 
 interface PromptFormModalProps {
@@ -10,6 +10,7 @@ interface PromptFormModalProps {
   categories: string[];
   availableTags: string[];
   onSave: (prompt: Prompt) => void;
+  onSaveAsTemplate: (prompt: Prompt) => void; // Added prop
   onClose: () => void;
 }
 
@@ -24,7 +25,7 @@ const EMPTY_PROMPT: Partial<Prompt> = {
   components: []
 };
 
-export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, structures, categories, availableTags, onSave, onClose }) => {
+export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, structures, categories, availableTags, onSave, onSaveAsTemplate, onClose }) => {
   const [formData, setFormData] = useState<Prompt>({ ...EMPTY_PROMPT, id: Date.now().toString() } as Prompt);
   const [tagInput, setTagInput] = useState('');
   
@@ -145,6 +146,17 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
         components: localComponents,
         structureId: selectedStructureId
     });
+  };
+
+  const handleSaveAsTemplate = () => {
+      const tags = tagInput.split(',').map(t => t.trim()).filter(Boolean);
+      onSaveAsTemplate({
+          ...formData,
+          tags,
+          components: localComponents,
+          structureId: selectedStructureId
+      });
+      alert('Сохранено в шаблоны!');
   };
 
   const addTag = (tag: string) => {
@@ -403,6 +415,16 @@ export const PromptFormModal: React.FC<PromptFormModalProps> = ({ initialData, s
             
         {/* Footer for Save/Cancel - Now OUTSIDE the form, stays fixed at bottom */}
         <div className="p-3 sm:p-4 bg-slate-900 border-t border-slate-800 flex justify-end gap-3 shrink-0 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+                <button
+                    type="button"
+                    onClick={handleSaveAsTemplate}
+                    className="px-4 py-2 rounded-lg text-pink-300 border border-pink-900/50 hover:bg-pink-900/20 hover:text-pink-200 transition-colors text-sm sm:text-base flex items-center gap-2 mr-auto"
+                >
+                    <LayoutTemplate size={18} />
+                    <span className="hidden sm:inline">В шаблоны</span>
+                    <span className="sm:hidden">Шаблон</span>
+                </button>
+
                 <button
                 type="button"
                 onClick={onClose}

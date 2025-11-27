@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Prompt } from '../types';
-import { X, Copy, Check, Edit, Trash2, Layers, User, Cpu, Download, FileText, FileJson, ChevronDown, CheckCircle2, Clock } from 'lucide-react';
+import { X, Copy, Check, Edit, Trash2, Layers, User, Cpu, Download, FileText, FileJson, ChevronDown, CheckCircle2, Clock, LayoutTemplate } from 'lucide-react';
 import { exportPromptToMarkdown, exportPromptToJson } from '../utils/fileExport';
 
 interface PromptDetailModalProps {
@@ -9,9 +9,10 @@ interface PromptDetailModalProps {
   onClose: () => void;
   onEdit: (prompt: Prompt) => void;
   onDelete: (id: string) => void;
+  onSaveAsTemplate: (prompt: Prompt) => void; // Added prop
 }
 
-export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, onClose, onEdit, onDelete }) => {
+export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, onClose, onEdit, onDelete, onSaveAsTemplate }) => {
   const [copiedSystem, setCopiedSystem] = useState(false);
   const [copiedUser, setCopiedUser] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -73,6 +74,16 @@ export const PromptDetailModal: React.FC<PromptDetailModalProps> = ({ prompt, on
 
             <div className="flex items-center justify-between sm:justify-end gap-2 overflow-x-auto pb-1 sm:pb-0">
                 
+                {/* Save as Template */}
+                <button 
+                    onClick={() => { onSaveAsTemplate(prompt); alert('Сохранено в шаблоны!'); }}
+                    className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-pink-400 text-xs font-medium px-3 py-2 rounded-lg border border-slate-700 transition-colors whitespace-nowrap"
+                    title="Сохранить как шаблон"
+                >
+                    <LayoutTemplate size={14} />
+                    <span className="hidden sm:inline">В шаблоны</span>
+                </button>
+
                 {/* Export Menu */}
                 <div className="relative">
                     <button 

@@ -12,18 +12,19 @@ import {
     isDriveConfigured,
     BackupData 
 } from '../services/googleDriveService';
-import { Prompt, Structure } from '../types';
+import { Prompt, Structure, Template } from '../types';
 
 interface CloudSyncModalProps {
     prompts: Prompt[];
     categories: string[];
     tags: string[];
     structures: Structure[];
+    templates: Template[];
     onRestore: (data: BackupData, silent?: boolean) => void;
     onClose: () => void;
 }
 
-export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categories, tags, structures, onRestore, onClose }) => {
+export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categories, tags, structures, templates, onRestore, onClose }) => {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [statusMsg, setStatusMsg] = useState('');
@@ -84,7 +85,8 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ prompts, categor
                 prompts,
                 categories,
                 tags,
-                structures, // Added structures
+                structures,
+                templates,
                 lastUpdated: new Date().toISOString()
             };
             const modifiedTime = await uploadBackup(data);

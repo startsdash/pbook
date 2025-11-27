@@ -1,5 +1,5 @@
 
-import { Prompt, Structure } from '../types';
+import { Prompt, Structure, Template } from '../types';
 
 // TypeScript declarations for Google API globals
 declare global {
@@ -90,6 +90,7 @@ export interface BackupData {
   categories: string[];
   tags: string[];
   structures: Structure[];
+  templates: Template[]; // Added templates
   lastUpdated: string;
 }
 

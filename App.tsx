@@ -1,21 +1,23 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Prompt, Structure } from './types';
+import { Prompt, Structure, Template } from './types';
 import { INITIAL_PROMPTS, INITIAL_STRUCTURES, INITIAL_CATEGORIES, INITIAL_TAGS } from './constants';
 import { CategoryFilter } from './components/CategoryFilter';
 import { PromptCard } from './components/PromptCard';
 import { PromptDetailModal } from './components/PromptDetailModal';
 import { PromptFormModal } from './components/PromptFormModal';
 import { StructureManagerModal } from './components/StructureManagerModal';
+import { TemplatesManagerModal } from './components/TemplatesManagerModal';
 import { SettingsModal } from './components/SettingsModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
-import { Search, BookOpen, Plus, Layers, Download, Upload, Settings, Menu, X, Cloud, RefreshCw, Loader2 } from 'lucide-react';
+import { Search, BookOpen, Plus, Layers, Download, Upload, Settings, Menu, X, Cloud, RefreshCw, Loader2, LayoutTemplate } from 'lucide-react';
 import { exportPromptsToExcel, parseExcelDatabase } from './utils/fileExport';
 import { BackupData, initGoogleDrivePromise, checkForRemoteBackup, downloadBackup, isSignedIn, uploadBackup } from './services/googleDriveService';
 
 export default function App() {
   const [prompts, setPrompts] = useState<Prompt[]>(INITIAL_PROMPTS);
   const [structures, setStructures] = useState<Structure[]>(INITIAL_STRUCTURES);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
   const [availableTags, setAvailableTags] = useState<string[]>(INITIAL_TAGS);
 
@@ -25,6 +27,7 @@ export default function App() {
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isStructureManagerOpen, setIsStructureManagerOpen] = useState(false);
+  const [isTemplatesManagerOpen, setIsTemplatesManagerOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCloudSyncOpen, setIsCloudSyncOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
@@ -130,6 +133,7 @@ export default function App() {
                 categories,
                 tags: availableTags,
                 structures,
+                templates,
                 lastUpdated: now
             });
             localStorage.setItem('last_cloud_sync', now);
@@ -143,7 +147,7 @@ export default function App() {
 
     const timer = setTimeout(autoSave, 2000); // 2s debounce
     return () => clearTimeout(timer);
-  }, [prompts, categories, availableTags, structures, isDriveConnected, isSyncEnabled]);
+  }, [prompts, categories, availableTags, structures, templates, isDriveConnected, isSyncEnabled]);
 
   const filteredPrompts = useMemo(() => {
     return prompts.filter(prompt => {
@@ -185,13 +189,37 @@ export default function App() {
     setEditingPrompt(null);
   };
 
+  const handleSaveAsTemplate = (prompt: Prompt) => {
+      const newTemplate: Template = {
+          ...prompt,
+          id: `tpl_${Date.now()}`,
+          title: prompt.title + ' (Копия)',
+          verificationStatus: 'ON_REVIEW' // Reset status for templates
+      };
+      setTemplates(prev => [...prev, newTemplate]);
+  };
+
+  const handleCreateFromTemplate = (template: Template) => {
+      setIsTemplatesManagerOpen(false);
+      setEditingPrompt({
+          ...template,
+          id: '', // Empty ID tells form it's new
+          title: template.title, // User can edit
+      });
+      setIsFormOpen(true);
+  };
+
+  const handleDeleteTemplate = (id: string) => {
+      setTemplates(prev => prev.filter(t => t.id !== id));
+  };
+
   const handleDeletePrompt = (id: string) => {
     setPrompts(prev => prev.filter(p => p.id !== id));
     setSelectedPrompt(null);
   };
 
   const handleExportDatabase = () => {
-      exportPromptsToExcel(prompts, categories, availableTags, structures);
+      exportPromptsToExcel(prompts, categories, availableTags, structures, templates);
       setIsMobileMenuOpen(false);
   };
 
@@ -214,11 +242,12 @@ export default function App() {
               prompts: importedPrompts, 
               categories: importedCategories, 
               tags: importedTags,
-              structures: importedStructures
+              structures: importedStructures,
+              templates: importedTemplates
           } = await parseExcelDatabase(file);
           
-          if (importedPrompts.length > 0) {
-              const confirmMessage = `Найдено ${importedPrompts.length} промптов.\n\n` +
+          if (importedPrompts.length > 0 || importedTemplates.length > 0) {
+              const confirmMessage = `Найдено ${importedPrompts.length} промптов и ${importedTemplates.length} шаблонов.\n\n` +
                                      `OK — ПОЛНОСТЬЮ ЗАМЕНИТЬ текущую базу.\n` +
                                      `Отмена — ОБЪЕДИНИТЬ (существующие записи обновятся, новые добавятся).`;
 
@@ -226,18 +255,23 @@ export default function App() {
                   setPrompts(importedPrompts);
                   setCategories(importedCategories);
                   setAvailableTags(importedTags);
+                  setTemplates(importedTemplates);
                   if (importedStructures.length > 0) {
                       setStructures(importedStructures);
                   }
-                  alert(`База успешно заменена. Загружено ${importedPrompts.length} промптов.`);
+                  alert(`База успешно заменена.`);
               } else {
+                  // Merge Prompts
                   const promptMap = new Map(prompts.map(p => [p.id, p]));
-                  importedPrompts.forEach(p => {
-                      promptMap.set(p.id, p);
-                  });
-                  const mergedPrompts = Array.from(promptMap.values());
-                  setPrompts(mergedPrompts);
+                  importedPrompts.forEach(p => promptMap.set(p.id, p));
+                  setPrompts(Array.from(promptMap.values()));
                   
+                  // Merge Templates
+                  const templateMap = new Map(templates.map(t => [t.id, t]));
+                  importedTemplates.forEach(t => templateMap.set(t.id, t));
+                  setTemplates(Array.from(templateMap.values()));
+
+                  // Merge Categories & Tags
                   const mergedCategoriesSet = new Set([...categories, ...importedCategories]);
                   const mergedCategories = ['Все', ...Array.from(mergedCategoriesSet).filter(c => c !== 'Все')];
                   setCategories(mergedCategories);
@@ -245,18 +279,17 @@ export default function App() {
                   const mergedTags = Array.from(new Set([...availableTags, ...importedTags]));
                   setAvailableTags(mergedTags);
 
+                  // Merge Structures
                   if (importedStructures.length > 0) {
                       const structureMap = new Map(structures.map(s => [s.id, s]));
-                      importedStructures.forEach(s => {
-                          structureMap.set(s.id, s);
-                      });
+                      importedStructures.forEach(s => structureMap.set(s.id, s));
                       setStructures(Array.from(structureMap.values()));
                   }
 
-                  alert(`База объединена. Всего промптов теперь: ${mergedPrompts.length}`);
+                  alert(`База объединена.`);
               }
           } else {
-              alert("Файл не содержит промптов.");
+              alert("Файл не содержит данных.");
           }
       } catch (error) {
           console.error("Import failed", error);
@@ -275,6 +308,7 @@ export default function App() {
           if (data.categories) setCategories(data.categories);
           if (data.tags) setAvailableTags(data.tags);
           if (data.structures) setStructures(data.structures);
+          if (data.templates) setTemplates(data.templates);
           localStorage.setItem('last_cloud_sync', new Date().toISOString());
       };
 
@@ -353,6 +387,9 @@ export default function App() {
             <button onClick={() => { handleCreatePrompt(); setIsMobileMenuOpen(false); }} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors shadow-lg shadow-indigo-900/20 active:scale-95 duration-100">
                 <Plus size={18} /> Создать промпт
             </button>
+            <button onClick={() => { setIsTemplatesManagerOpen(true); setIsMobileMenuOpen(false); }} className="w-full bg-slate-900 border border-slate-800 hover:border-pink-500/50 hover:text-pink-400 text-slate-300 py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors active:scale-95 duration-100">
+                <LayoutTemplate size={18} /> Шаблоны
+            </button>
             <button onClick={() => { setIsStructureManagerOpen(true); setIsMobileMenuOpen(false); }} className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-3 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors active:scale-95 duration-100">
                 <Layers size={18} /> Структуры
             </button>
@@ -430,11 +467,12 @@ export default function App() {
         </div>
       </main>
 
-      {selectedPrompt && <PromptDetailModal prompt={selectedPrompt} onClose={() => setSelectedPrompt(null)} onEdit={handleEditPrompt} onDelete={handleDeletePrompt} />}
-      {isFormOpen && <PromptFormModal initialData={editingPrompt} structures={structures} categories={categories} availableTags={availableTags} onSave={handleSavePrompt} onClose={() => setIsFormOpen(false)} />}
+      {selectedPrompt && <PromptDetailModal prompt={selectedPrompt} onClose={() => setSelectedPrompt(null)} onEdit={handleEditPrompt} onDelete={handleDeletePrompt} onSaveAsTemplate={handleSaveAsTemplate} />}
+      {isFormOpen && <PromptFormModal initialData={editingPrompt} structures={structures} categories={categories} availableTags={availableTags} onSave={handleSavePrompt} onSaveAsTemplate={handleSaveAsTemplate} onClose={() => setIsFormOpen(false)} />}
       {isStructureManagerOpen && <StructureManagerModal structures={structures} onUpdateStructures={setStructures} onClose={() => setIsStructureManagerOpen(false)} />}
+      {isTemplatesManagerOpen && <TemplatesManagerModal templates={templates} onCreateFromTemplate={handleCreateFromTemplate} onDeleteTemplate={handleDeleteTemplate} onClose={() => setIsTemplatesManagerOpen(false)} />}
       {isSettingsOpen && <SettingsModal categories={categories} setCategories={setCategories} tags={availableTags} setTags={setAvailableTags} onClose={() => setIsSettingsOpen(false)} />}
-      {isCloudSyncOpen && <CloudSyncModal prompts={prompts} categories={categories} tags={availableTags} structures={structures} onRestore={handleCloudRestore} onClose={() => setIsCloudSyncOpen(false)} />}
+      {isCloudSyncOpen && <CloudSyncModal prompts={prompts} categories={categories} tags={availableTags} structures={structures} templates={templates} onRestore={handleCloudRestore} onClose={() => setIsCloudSyncOpen(false)} />}
     </div>
   );
 }

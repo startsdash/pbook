@@ -1,5 +1,5 @@
 
-import { Prompt, PromptComponent, VerificationStatus, Structure } from '../types';
+import { Prompt, PromptComponent, VerificationStatus, Structure, Template } from '../types';
 import * as XLSX from 'xlsx';
 
 /**
@@ -98,9 +98,9 @@ interface ExcelSettingRow {
     Value: string;
 }
 
-export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], tags: string[], structures: Structure[]) => {
-    // 1. Prepare Prompt Rows
-    const promptRows: ExcelPromptRow[] = prompts.map(p => ({
+export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], tags: string[], structures: Structure[], templates: Template[] = []) => {
+    // Helper to format rows
+    const formatPromptRow = (p: Prompt): ExcelPromptRow => ({
         ID: p.id,
         Title: p.title,
         Category: p.category,
@@ -111,9 +111,15 @@ export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], ta
         VerificationStatus: p.verificationStatus,
         ComponentsJSON: JSON.stringify(p.components || []),
         StructureID: p.structureId || ''
-    }));
+    });
 
-    // 2. Prepare Structure Rows
+    // 1. Prepare Prompt Rows
+    const promptRows: ExcelPromptRow[] = prompts.map(formatPromptRow);
+
+    // 2. Prepare Template Rows
+    const templateRows: ExcelPromptRow[] = templates.map(formatPromptRow);
+
+    // 3. Prepare Structure Rows
     const structureRows: ExcelStructureRow[] = structures.map(s => ({
         ID: s.id,
         Title: s.title,
@@ -127,22 +133,30 @@ export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], ta
     const promptWorksheet = XLSX.utils.json_to_sheet(promptRows);
     XLSX.utils.book_append_sheet(workbook, promptWorksheet, "Prompts");
 
-    // Auto-width for columns
-    promptWorksheet['!cols'] = [
-        {wch: 15}, // ID
-        {wch: 30}, // Title
-        {wch: 20}, // Category
-        {wch: 25}, // Tags
-        {wch: 40}, // Description
-        {wch: 50}, // System
-        {wch: 50}, // User
-        {wch: 15}, // Status
-        {wch: 20}, // Components
-        {wch: 15}, // StructureID
-    ];
+    const setCols = (ws: XLSX.WorkSheet) => {
+        ws['!cols'] = [
+            {wch: 15}, // ID
+            {wch: 30}, // Title
+            {wch: 20}, // Category
+            {wch: 25}, // Tags
+            {wch: 40}, // Description
+            {wch: 50}, // System
+            {wch: 50}, // User
+            {wch: 15}, // Status
+            {wch: 20}, // Components
+            {wch: 15}, // StructureID
+        ];
+    };
+    setCols(promptWorksheet);
 
-    // Sheet 2: Structures
-    // Always create sheet if structures exist, ensures new structures are saved
+    // Sheet 2: Templates
+    if (templateRows.length > 0) {
+        const templateWorksheet = XLSX.utils.json_to_sheet(templateRows);
+        XLSX.utils.book_append_sheet(workbook, templateWorksheet, "Templates");
+        setCols(templateWorksheet);
+    }
+
+    // Sheet 3: Structures
     if (structureRows.length > 0) {
         const structureWorksheet = XLSX.utils.json_to_sheet(structureRows);
         XLSX.utils.book_append_sheet(workbook, structureWorksheet, "Structures");
@@ -154,8 +168,7 @@ export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], ta
         ];
     }
 
-    // Sheet 3: Settings (Categories & Tags)
-    // Filter out 'Все' from categories as it is a default UI constant
+    // Sheet 4: Settings (Categories & Tags)
     const uniqueCats = Array.from(new Set(categories)).filter(c => c && c !== 'Все');
     const uniqueTags = Array.from(new Set(tags));
 
@@ -172,7 +185,7 @@ export const exportPromptsToExcel = (prompts: Prompt[], categories: string[], ta
     XLSX.writeFile(workbook, `PromptBook_DB_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
-export const parseExcelDatabase = async (file: File): Promise<{ prompts: Prompt[], categories: string[], tags: string[], structures: Structure[] }> => {
+export const parseExcelDatabase = async (file: File): Promise<{ prompts: Prompt[], categories: string[], tags: string[], structures: Structure[], templates: Template[] }> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         
@@ -186,45 +199,50 @@ export const parseExcelDatabase = async (file: File): Promise<{ prompts: Prompt[
                 // Use 'array' type for robustness across browsers
                 const workbook = XLSX.read(data, { type: 'array' });
                 
-                // 1. Parse Prompts
-                const sheetName = workbook.SheetNames.find(n => n === "Prompts") || workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[sheetName];
-                const json = XLSX.utils.sheet_to_json<any>(worksheet);
+                const parsePromptsFromSheet = (sheetName: string): Prompt[] => {
+                    if (!workbook.SheetNames.includes(sheetName)) return [];
+                    const worksheet = workbook.Sheets[sheetName];
+                    const json = XLSX.utils.sheet_to_json<any>(worksheet);
 
-                const prompts: Prompt[] = json.map((row: any) => {
-                    let parsedComponents: PromptComponent[] = [];
-                    try {
-                        if (row.ComponentsJSON && row.ComponentsJSON !== 'undefined') {
-                            parsedComponents = JSON.parse(String(row.ComponentsJSON));
+                    return json.map((row: any) => {
+                        let parsedComponents: PromptComponent[] = [];
+                        try {
+                            if (row.ComponentsJSON && row.ComponentsJSON !== 'undefined') {
+                                parsedComponents = JSON.parse(String(row.ComponentsJSON));
+                            }
+                        } catch (e) {
+                            console.warn('Failed to parse components for row', row.ID);
                         }
-                    } catch (e) {
-                        console.warn('Failed to parse components for row', row.ID);
-                    }
 
-                    // Robust Status parsing (case insensitive)
-                    let status: VerificationStatus = 'ON_REVIEW';
-                    const statusStr = String(row.VerificationStatus || '').trim().toUpperCase();
-                    if (statusStr === 'VERIFIED') status = 'VERIFIED';
+                        let status: VerificationStatus = 'ON_REVIEW';
+                        const statusStr = String(row.VerificationStatus || '').trim().toUpperCase();
+                        if (statusStr === 'VERIFIED') status = 'VERIFIED';
 
-                    // Parse tags carefully
-                    const tagsRaw = row.Tags ? String(row.Tags) : '';
-                    const tagsList = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+                        const tagsRaw = row.Tags ? String(row.Tags) : '';
+                        const tagsList = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
 
-                    return {
-                        id: row.ID ? String(row.ID) : Math.random().toString(36).substr(2, 9),
-                        title: row.Title ? String(row.Title) : 'Без названия',
-                        category: row.Category ? String(row.Category) : 'Без категории',
-                        tags: tagsList,
-                        description: row.Description ? String(row.Description) : '',
-                        systemContent: row.SystemContent ? String(row.SystemContent) : '',
-                        userContent: row.UserContent ? String(row.UserContent) : '',
-                        verificationStatus: status,
-                        structureId: row.StructureID ? String(row.StructureID) : undefined,
-                        components: parsedComponents
-                    };
-                });
+                        return {
+                            id: row.ID ? String(row.ID) : Math.random().toString(36).substr(2, 9),
+                            title: row.Title ? String(row.Title) : 'Без названия',
+                            category: row.Category ? String(row.Category) : 'Без категории',
+                            tags: tagsList,
+                            description: row.Description ? String(row.Description) : '',
+                            systemContent: row.SystemContent ? String(row.SystemContent) : '',
+                            userContent: row.UserContent ? String(row.UserContent) : '',
+                            verificationStatus: status,
+                            structureId: row.StructureID ? String(row.StructureID) : undefined,
+                            components: parsedComponents
+                        };
+                    });
+                };
 
-                // 2. Parse Structures
+                // 1. Parse Prompts
+                const prompts = parsePromptsFromSheet("Prompts");
+
+                // 2. Parse Templates
+                const templates = parsePromptsFromSheet("Templates");
+
+                // 3. Parse Structures
                 let structures: Structure[] = [];
                 if (workbook.SheetNames.includes("Structures")) {
                     const structSheet = workbook.Sheets["Structures"];
@@ -249,7 +267,7 @@ export const parseExcelDatabase = async (file: File): Promise<{ prompts: Prompt[
                     });
                 }
 
-                // 3. Parse Settings (if available)
+                // 4. Parse Settings (if available)
                 let parsedCategories: string[] = [];
                 let parsedTags: string[] = [];
 
@@ -261,31 +279,25 @@ export const parseExcelDatabase = async (file: File): Promise<{ prompts: Prompt[
                     parsedTags = settingsJson.filter(r => r.Type === 'Tag').map(r => String(r.Value));
                 }
 
-                // 4. Finalize Categories & Tags
-                // CRITICAL FIX: To prevent Tags from accidentally polluting the Category dropdown,
-                // we ONLY scrape categories from prompt rows if the explicit 'Settings' sheet was missing or empty.
-                // If 'Settings' exists, it is the source of truth.
-                
                 let finalCategories: string[] = [];
                 if (parsedCategories.length > 0) {
                     finalCategories = parsedCategories;
                 } else {
-                    // Fallback: Scrape from prompts only if no explicit settings found
-                    const promptCategories = new Set(prompts.map(p => p.category));
+                    const promptCategories = new Set([...prompts, ...templates].map(p => p.category));
                     finalCategories = Array.from(promptCategories);
                 }
 
-                const promptTags = new Set(prompts.flatMap(p => p.tags));
+                const promptTags = new Set([...prompts, ...templates].flatMap(p => p.tags));
                 const finalTags = Array.from(new Set([...parsedTags, ...promptTags])).filter(Boolean);
 
-                // Always ensure 'Все' is present and duplicates removed
                 const uniqueCategories = Array.from(new Set(['Все', ...finalCategories]));
 
                 resolve({ 
                     prompts, 
                     categories: uniqueCategories, 
                     tags: finalTags,
-                    structures 
+                    structures,
+                    templates
                 });
             } catch (err) {
                 console.error("Excel parse error:", err);

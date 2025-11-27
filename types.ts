@@ -35,3 +35,6 @@ export interface Prompt {
   structureId?: string;
   components: PromptComponent[];
 }
+
+// Templates share the exact same structure as Prompts
+export type Template = Prompt;
